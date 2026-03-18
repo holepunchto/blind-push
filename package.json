@@ -1,0 +1,37 @@
+{
+  "name": "blind-push",
+  "version": "0.1.0",
+  "description": "P2P Push notification gateway that work with blind-peer",
+  "homepage": "https://github.com/holepunchto/blind-push#readme",
+  "bugs": {
+    "url": "https://github.com/holepunchto/blind-push/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/holepunchto/blind-push.git"
+  },
+  "license": "Apache-2.0",
+  "author": "Holepunch Inc",
+  "type": "commonjs",
+  "main": "index.js",
+  "files": [
+    "index.js",
+    "lib/",
+    "spec/"
+  ],
+  "scripts": {
+    "build": "node build.js",
+    "lint": "lunte && prettier --check .",
+    "format": "prettier --write .",
+    "test": "npm run lint && brittle test/*.test.js",
+    "test:bare": "brittle-bare test/*.test.js",
+    "test-example": "node example/index.js"
+  },
+  "devDependencies": {
+    "brittle": "^3.19.1",
+    "hyperschema": "^1.10.4",
+    "lunte": "^1.6.0",
+    "prettier": "^3.8.1",
+    "prettier-config-holepunch": "^2.0.0"
+  }
+}
