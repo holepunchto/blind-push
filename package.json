@@ -14,6 +14,11 @@
   "author": "Holepunch Inc",
   "type": "commonjs",
   "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./encodings": "./lib/encodings.js",
+    "./errors": "./lib/errors.js"
+  },
   "files": [
     "index.js",
     "lib/",
@@ -27,9 +32,16 @@
     "test:bare": "brittle-bare test/*.test.js",
     "test-example": "node example/index.js"
   },
+  "dependencies": {
+    "b4a": "^1.8.0",
+    "compact-encoding": "^2.19.0",
+    "hypercore": "^11.27.14",
+    "hypercore-crypto": "^3.6.1",
+    "hyperschema": "^1.10.4",
+    "sodium-native": "^5.1.0"
+  },
   "devDependencies": {
     "brittle": "^3.19.1",
-    "hyperschema": "^1.10.4",
     "lunte": "^1.6.0",
     "prettier": "^3.8.1",
     "prettier-config-holepunch": "^2.0.0"

@@ -1,0 +1,125 @@
+{
+  "version": 1,
+  "schema": [
+    {
+      "name": "blind-peer-request-block",
+      "namespace": "blind-push",
+      "compact": false,
+      "flagsPosition": -1,
+      "fields": [
+        {
+          "name": "key",
+          "required": true,
+          "type": "fixed32",
+          "version": 1
+        },
+        {
+          "name": "index",
+          "required": true,
+          "type": "uint",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "name": "blind-peer-request-destination",
+      "namespace": "blind-push",
+      "compact": false,
+      "flagsPosition": -1,
+      "fields": [
+        {
+          "name": "key",
+          "required": true,
+          "type": "fixed32",
+          "version": 1
+        },
+        {
+          "name": "discoveryKey",
+          "required": true,
+          "type": "buffer",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "name": "blind-peer-request",
+      "namespace": "blind-push",
+      "compact": false,
+      "flagsPosition": -1,
+      "fields": [
+        {
+          "name": "block",
+          "required": true,
+          "type": "@blind-push/blind-peer-request-block",
+          "version": 1
+        },
+        {
+          "name": "destination",
+          "required": true,
+          "type": "@blind-push/blind-peer-request-destination",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "name": "push-payload",
+      "namespace": "blind-push",
+      "compact": false,
+      "flagsPosition": -1,
+      "fields": [
+        {
+          "name": "payload",
+          "required": true,
+          "type": "buffer",
+          "version": 1
+        },
+        {
+          "name": "discoveryKey",
+          "required": true,
+          "type": "buffer",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "name": "forward-push-request",
+      "namespace": "blind-push",
+      "compact": false,
+      "flagsPosition": 1,
+      "fields": [
+        {
+          "name": "payload",
+          "required": true,
+          "type": "@blind-push/push-payload",
+          "version": 1
+        },
+        {
+          "name": "appId",
+          "required": false,
+          "type": "string",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "name": "gateway-forward-request",
+      "namespace": "blind-push",
+      "compact": false,
+      "flagsPosition": 1,
+      "fields": [
+        {
+          "name": "payload",
+          "required": true,
+          "type": "@blind-push/push-payload",
+          "version": 1
+        },
+        {
+          "name": "appId",
+          "required": false,
+          "type": "string",
+          "version": 1
+        }
+      ]
+    }
+  ]
+}
