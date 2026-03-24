@@ -1,32 +1,83 @@
 const Hypercore = require('hypercore')
+const SuspendResource = require('suspend-resource')
 
-async function createReplicatedCorePair(t) {
-  const source = await createCore(t)
-  const dest = await createCore(t, source.key)
+// StreamLink forwards one stream into another, with suspend/resume queueing.
+class StreamLink extends SuspendResource {
+  constructor(src, dst) {
+    super()
 
-  const sourceStream = source.replicate(true, { keepAlive: false })
-  const destStream = dest.replicate(false, { keepAlive: false })
+    this.src = src
+    this.dst = dst
+    this.queue = []
+    this._ondataBound = this._ondata.bind(this)
+  }
 
-  const sourceClosed = new Promise((resolve) => sourceStream.once('close', resolve))
-  const destClosed = new Promise((resolve) => destStream.once('close', resolve))
+  async _open() {
+    this.src.on('data', this._ondataBound)
+  }
 
-  sourceStream.on('error', (err) => {
-    t.comment(`replication stream error (source): ${err}`)
+  async _close() {
+    this.src.removeListener('data', this._ondataBound)
+    this.queue.length = 0
+  }
+
+  async _suspend() {}
+
+  async _resume() {
+    while (this.queue.length > 0) {
+      this.dst.write(this.queue.shift())
+    }
+  }
+
+  _ondata(data) {
+    if (this.suspended) {
+      this.queue.push(data)
+      return
+    }
+
+    this.dst.write(data)
+  }
+}
+
+async function setupE2ENodes(t) {
+  const sender = await createCore(t)
+  const blindPeer = await createCore(t, sender.key)
+  const receiver = await createCore(t, sender.key)
+
+  const senderLink = await replicate(sender, blindPeer, t)
+  const receiverLink = await replicate(blindPeer, receiver, t)
+
+  return { sender, receiver, blindPeer, senderLink, receiverLink }
+}
+
+async function replicate(src, dst, t) {
+  const srcStream = src.replicate(true, { keepAlive: false })
+  const dstStream = dst.replicate(false, { keepAlive: false })
+  const link = new StreamLink(srcStream, dstStream)
+
+  srcStream.on('error', (err) => {
+    t.comment(`replication stream error (src): ${err}`)
   })
-  destStream.on('error', (err) => {
-    t.comment(`replication stream error (dest): ${err}`)
+  dstStream.on('error', (err) => {
+    t.comment(`replication stream error (dst): ${err}`)
   })
+
+  dstStream.pipe(srcStream)
+
+  const srcClosed = new Promise((resolve) => srcStream.once('close', resolve))
+  const dstClosed = new Promise((resolve) => dstStream.once('close', resolve))
 
   t.teardown(async function () {
-    sourceStream.destroy()
-    destStream.destroy()
-    await sourceClosed
-    await destClosed
+    await link.close()
+    srcStream.destroy()
+    dstStream.destroy()
+    await srcClosed
+    await dstClosed
   })
 
-  sourceStream.pipe(destStream).pipe(sourceStream)
+  await link.ready()
 
-  return { source, dest }
+  return link
 }
 
 async function createCore(t, key) {
@@ -48,5 +99,7 @@ async function createCore(t, key) {
 
 module.exports = {
   createCore,
-  createReplicatedCorePair
+  setupE2ENodes,
+  replicate,
+  StreamLink
 }

@@ -7,7 +7,7 @@ const remote = require('hypercore/lib/fully-remote-proof')
 const { PushPayload } = require('./lib/encodings')
 const BlindPushError = require('./lib/errors')
 
-const [NS_BLINDING] = crypto.namespace('keet/notications', 1)
+const [NS_BLINDING] = crypto.namespace('blind-push', 1)
 
 // Firebase limit is 4000, Apple is 4096.
 // Leave room for the outer payload framing plus some safety margin.
@@ -68,16 +68,16 @@ function decode(raw) {
 }
 
 /**
- * @param {import('hypercore')} core
+ * @param {any} store
  * @param {Uint8Array} payload
  * @param {object} [opts]
- * @param {Uint8Array} [opts.roomKey=core.key]
+ * @param {Uint8Array} [opts.roomKey]
  * @returns {Promise<object | null>}
  */
-async function receive(core, payload, { roomKey = core.key } = {}) {
+async function receive(store, payload, { roomKey } = {}) {
   const proof = decrypt(roomKey, payload)
 
-  return remote.verify(core.state.storage.store, proof, { referrer: roomKey })
+  return remote.verify(store, proof, { referrer: roomKey })
 }
 
 /**
