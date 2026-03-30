@@ -5,7 +5,6 @@ const cenc = require('compact-encoding')
 const remote = require('hypercore/lib/fully-remote-proof')
 
 const { PushPayload } = require('./lib/encodings')
-const BlindPushError = require('./lib/errors')
 
 const [NS_BLINDING] = crypto.namespace('blind-push', 1)
 
@@ -27,7 +26,7 @@ const MAX_PAYLOAD_SIZE = 4000 - 32 - 1 - 16
  * @param {number} [opts.timeout=10000]
  * @returns {Promise<PushPayload>}
  */
-async function send(
+async function createNotification(
   core,
   {
     roomKey = core.key,
@@ -44,6 +43,9 @@ async function send(
   })
 
   let payload = await encryptNotificationProof(core, roomKey, block, index)
+
+  // If payload exceeds MAX_PAYLOAD_SIZE, don't send it via Firebase
+  // exclude the block and let the client fetch it via hypercore replication
   if (payload.byteLength > MAX_PAYLOAD_SIZE) {
     payload = await encryptNotificationProof(core, roomKey, null, 0)
   }
@@ -69,14 +71,13 @@ function decode(raw) {
 
 /**
  * @param {any} store
+ * @param {Uint8Array} roomKey
  * @param {Uint8Array} payload
- * @param {object} [opts]
- * @param {Uint8Array} [opts.roomKey]
- * @returns {Promise<object | null>}
+ * @returns {Promise<any | null>}
  */
-async function receive(store, payload, { roomKey } = {}) {
-  const proof = decrypt(roomKey, payload)
-
+async function readNotification(store, roomKey, payload) {
+  const proof = decryptProof(roomKey, payload)
+  if (!proof) return null
   return remote.verify(store, proof, { referrer: roomKey })
 }
 
@@ -92,43 +93,39 @@ function generateBlindingKey(roomKey) {
 
 /**
  * @param {Uint8Array} roomKey
- * @param {Uint8Array} message
+ * @param {Uint8Array} proof
  * @returns {Uint8Array}
  */
-function encrypt(roomKey, message) {
+function encryptProof(roomKey, proof) {
   const secretKey = generateBlindingKey(roomKey)
-  const buffer = b4a.allocUnsafe(
-    message.byteLength + sodium.crypto_secretbox_MACBYTES + sodium.crypto_secretbox_NONCEBYTES
+  const encrypted = b4a.allocUnsafe(
+    proof.byteLength + sodium.crypto_secretbox_MACBYTES + sodium.crypto_secretbox_NONCEBYTES
   )
-  const nonce = buffer.subarray(0, sodium.crypto_secretbox_NONCEBYTES)
-  const box = buffer.subarray(nonce.byteLength)
+  const nonce = encrypted.subarray(0, sodium.crypto_secretbox_NONCEBYTES)
+  const box = encrypted.subarray(nonce.byteLength)
 
   sodium.randombytes_buf(nonce)
-  sodium.crypto_secretbox_easy(box, message, nonce, secretKey)
+  sodium.crypto_secretbox_easy(box, proof, nonce, secretKey)
 
-  return buffer
+  return encrypted
 }
 
 /**
  * @param {Uint8Array} roomKey
- * @param {Uint8Array} buffer
- * @returns {Uint8Array}
+ * @param {Uint8Array} encrypted
+ * @returns {Uint8Array | null}
  */
-function decrypt(roomKey, buffer) {
-  if (buffer.byteLength < sodium.crypto_secretbox_NONCEBYTES + sodium.crypto_secretbox_MACBYTES) {
-    throw BlindPushError.INVALID_DECRYPTION_KEY()
-  }
-
+function decryptProof(roomKey, encrypted) {
   const secretKey = generateBlindingKey(roomKey)
-  const nonce = buffer.subarray(0, sodium.crypto_secretbox_NONCEBYTES)
-  const box = buffer.subarray(nonce.byteLength)
-  const message = b4a.allocUnsafe(box.byteLength - sodium.crypto_secretbox_MACBYTES)
+  const nonce = encrypted.subarray(0, sodium.crypto_secretbox_NONCEBYTES)
+  const box = encrypted.subarray(nonce.byteLength)
+  const proof = b4a.allocUnsafe(box.byteLength - sodium.crypto_secretbox_MACBYTES)
 
-  if (!sodium.crypto_secretbox_open_easy(message, box, nonce, secretKey)) {
-    throw BlindPushError.INVALID_DECRYPTION_KEY()
+  if (!sodium.crypto_secretbox_open_easy(proof, box, nonce, secretKey)) {
+    return null
   }
 
-  return message
+  return proof
 }
 
 /**
@@ -140,12 +137,12 @@ function decrypt(roomKey, buffer) {
  */
 async function encryptNotificationProof(core, roomKey, block, index) {
   const proof = await remote.proof(core, { block, index })
-  return encrypt(roomKey, proof)
+  return encryptProof(roomKey, proof)
 }
 
 module.exports = {
   encode,
   decode,
-  send,
-  receive
+  createNotification,
+  readNotification
 }
