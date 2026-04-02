@@ -1,0 +1,87 @@
+const test = require('brittle')
+const b4a = require('b4a')
+
+const { createNotification, readNotification } = require('..')
+const { createCore } = require('./helper')
+
+test('createNotification/readNotification happy path', async function (t) {
+  const core = await createCore(t)
+
+  const block = b4a.from('hello world')
+  await core.append(block)
+
+  const push = await createNotification(core)
+  t.alike(push.discoveryKey, core.discoveryKey, 'createNotification returns the room discovery key')
+
+  const result = await readNotification(core.state.storage.store, core.key, push.payload)
+  t.ok(result, 'readNotification verifies the push proof')
+  t.alike(result.key, core.key, 'readNotification returns the sender key')
+  t.alike(
+    result.discoveryKey,
+    core.discoveryKey,
+    'readNotification returns the sender discovery key'
+  )
+  t.is(result.length, 1, 'readNotification returns the current core length')
+  t.is(result.newer, false, 'readNotification does not report newer data for the same core state')
+  t.is(result.block.index, 0, 'readNotification returns the appended block index')
+  t.ok(result.block.value, 'readNotification returns the appended block value')
+  t.alike(result.block.value, block, 'readNotification returns the appended block value')
+})
+
+test('createNotification omits block data for oversized payloads', async function (t) {
+  const core = await createCore(t)
+
+  await core.append(b4a.alloc(4_000, 'a'))
+
+  const push = await createNotification(core)
+  t.alike(push.discoveryKey, core.discoveryKey, 'createNotification returns the room discovery key')
+
+  const result = await readNotification(core.state.storage.store, core.key, push.payload)
+  t.ok(result, 'readNotification verifies the compact push proof')
+  t.alike(result.key, core.key, 'readNotification returns the sender key')
+  t.alike(
+    result.discoveryKey,
+    core.discoveryKey,
+    'readNotification returns the sender discovery key'
+  )
+  t.is(result.length, 1, 'readNotification returns the current core length')
+  t.is(result.newer, false, 'readNotification does not report newer data for the same core state')
+  t.is(result.block, null, 'readNotification omits block data when the payload is too large')
+})
+
+test('createNotification throws on an empty core', async function (t) {
+  const core = await createCore(t)
+
+  await t.exception(
+    createNotification(core),
+    /ERR_ASSERTION/,
+    'createNotification rejects when the core is empty'
+  )
+})
+
+test('readNotification returns null for a proof from another core', async function (t) {
+  const core = await createCore(t)
+  const otherCore = await createCore(t)
+
+  await otherCore.append(b4a.from('hello world'))
+
+  const push = await createNotification(otherCore, { roomKey: core.key })
+  const result = await readNotification(core.state.storage.store, core.key, push.payload)
+
+  t.is(result, null, 'readNotification ignores proofs for cores outside the receiver storage')
+})
+
+test('readNotification return null on an invalid room key', async function (t) {
+  const core = await createCore(t)
+  const otherRoom = await createCore(t)
+
+  await core.append(b4a.from('hello world'))
+
+  const push = await createNotification(core)
+
+  await t.is(
+    await readNotification(core.state.storage.store, otherRoom.key, push.payload),
+    null,
+    'readNotification rejects payloads that cannot be decrypted with the provided room key'
+  )
+})
