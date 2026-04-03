@@ -51,6 +51,37 @@ blindPush.register({
       name: 'destination',
       type: '@blind-push/blind-peer-request-destination',
       required: true
+    },
+    {
+      name: 'version',
+      type: 'uint',
+      required: true
+    },
+    {
+      name: 'extra',
+      type: 'buffer',
+      required: false
+    }
+  ]
+})
+
+blindPush.register({
+  name: 'proof-payload',
+  fields: [
+    {
+      name: 'version',
+      type: 'uint',
+      required: true
+    },
+    {
+      name: 'proof',
+      type: 'buffer',
+      required: true
+    },
+    {
+      name: 'extra',
+      type: 'buffer',
+      required: false
     }
   ]
 })

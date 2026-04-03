@@ -4,7 +4,10 @@ const crypto = require('hypercore-crypto')
 const cenc = require('compact-encoding')
 const remote = require('hypercore/lib/fully-remote-proof')
 
-const { PushPayload } = require('./lib/encodings')
+const schema = require('./spec/hyperschema')
+
+const PushPayload = schema.getEncoding('@blind-push/push-payload')
+const ProofPayload = schema.getEncoding('@blind-push/proof-payload')
 
 const [NS_BLINDING] = crypto.namespace('blind-push', 1)
 
@@ -16,6 +19,16 @@ const MAX_PAYLOAD_SIZE = 4000 - 32 - 1 - 16
  * @typedef {object} PushPayload
  * @property {Uint8Array} discoveryKey
  * @property {Uint8Array} payload
+ * @property {number} [version=0]
+ * @property {Uint8Array | null} [extra=null]
+ */
+
+/**
+ * @typedef {object} ProofPayload
+ * @property {number} version
+ * @property {Uint8Array} proof
+ * @property {Uint8Array | null} [extra=null]
+ */
 
 /**
  * @param {import('hypercore')} core
@@ -24,6 +37,8 @@ const MAX_PAYLOAD_SIZE = 4000 - 32 - 1 - 16
  * @param {Uint8Array} [opts.roomDiscoveryKey=crypto.discoveryKey(roomKey)]
  * @param {number} [opts.index=core.length - 1]
  * @param {number} [opts.timeout=10000]
+ * @param {number} [opts.version=0]
+ * @param {Uint8Array | null} [opts.extra=null]
  * @returns {Promise<PushPayload>}
  */
 async function createNotification(
@@ -32,7 +47,9 @@ async function createNotification(
     roomKey = core.key,
     roomDiscoveryKey = crypto.discoveryKey(roomKey),
     index = core.length - 1,
-    timeout = 10_000
+    timeout = 10_000,
+    version = 0,
+    extra = null
   } = {}
 ) {
   const block = await core.get(index, {
@@ -42,15 +59,15 @@ async function createNotification(
     raw: true
   })
 
-  let payload = await encryptNotificationProof(core, roomKey, block, index)
+  let payload = await encryptNotificationProof(core, roomKey, block, index, version, { extra })
 
   // If payload exceeds MAX_PAYLOAD_SIZE, don't send it via Firebase
   // exclude the block and let the client fetch it via hypercore replication
   if (payload.byteLength > MAX_PAYLOAD_SIZE) {
-    payload = await encryptNotificationProof(core, roomKey, null, 0)
+    payload = await encryptNotificationProof(core, roomKey, null, 0, version, { extra })
   }
 
-  return { discoveryKey: roomDiscoveryKey, payload }
+  return { discoveryKey: roomDiscoveryKey, payload, version, extra }
 }
 
 /**
@@ -76,9 +93,11 @@ function decode(raw) {
  * @returns {Promise<any | null>}
  */
 async function readNotification(store, roomKey, payload) {
-  const proof = decryptProof(roomKey, payload)
-  if (!proof) return null
-  return remote.verify(store, proof, { referrer: roomKey })
+  const proofPayload = decryptProof(roomKey, payload)
+  if (!proofPayload) return null
+  const result = await remote.verify(store, proofPayload.proof, { referrer: roomKey })
+  if (!result) return null
+  return { result, version: proofPayload.version, extra: proofPayload.extra }
 }
 
 /**
@@ -113,19 +132,19 @@ function encryptProof(roomKey, proof) {
 /**
  * @param {Uint8Array} roomKey
  * @param {Uint8Array} encrypted
- * @returns {Uint8Array | null}
+ * @returns {ProofPayload | null}
  */
 function decryptProof(roomKey, encrypted) {
   const secretKey = generateBlindingKey(roomKey)
   const nonce = encrypted.subarray(0, sodium.crypto_secretbox_NONCEBYTES)
   const box = encrypted.subarray(nonce.byteLength)
-  const proof = b4a.allocUnsafe(box.byteLength - sodium.crypto_secretbox_MACBYTES)
+  const rawProofPayload = b4a.allocUnsafe(box.byteLength - sodium.crypto_secretbox_MACBYTES)
 
-  if (!sodium.crypto_secretbox_open_easy(proof, box, nonce, secretKey)) {
+  if (!sodium.crypto_secretbox_open_easy(rawProofPayload, box, nonce, secretKey)) {
     return null
   }
 
-  return proof
+  return cenc.decode(ProofPayload, rawProofPayload)
 }
 
 /**
@@ -133,11 +152,15 @@ function decryptProof(roomKey, encrypted) {
  * @param {Uint8Array} roomKey
  * @param {Uint8Array | null} block
  * @param {number} index
+ * @param {number} version
+ * @param {object} [opts]
+ * @param {Uint8Array | null} [opts.extra=null]
  * @returns {Promise<Uint8Array>}
  */
-async function encryptNotificationProof(core, roomKey, block, index) {
+async function encryptNotificationProof(core, roomKey, block, index, version, { extra } = {}) {
   const proof = await remote.proof(core, { block, index })
-  return encryptProof(roomKey, proof)
+  const rawProofPayload = cenc.encode(ProofPayload, { version, extra, proof })
+  return encryptProof(roomKey, rawProofPayload)
 }
 
 module.exports = {

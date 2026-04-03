@@ -45,7 +45,7 @@
       "name": "blind-peer-request",
       "namespace": "blind-push",
       "compact": false,
-      "flagsPosition": -1,
+      "flagsPosition": 3,
       "fields": [
         {
           "name": "block",
@@ -57,6 +57,44 @@
           "name": "destination",
           "required": true,
           "type": "@blind-push/blind-peer-request-destination",
+          "version": 1
+        },
+        {
+          "name": "version",
+          "required": true,
+          "type": "uint",
+          "version": 1
+        },
+        {
+          "name": "extra",
+          "required": false,
+          "type": "buffer",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "name": "proof-payload",
+      "namespace": "blind-push",
+      "compact": false,
+      "flagsPosition": 2,
+      "fields": [
+        {
+          "name": "version",
+          "required": true,
+          "type": "uint",
+          "version": 1
+        },
+        {
+          "name": "proof",
+          "required": true,
+          "type": "buffer",
+          "version": 1
+        },
+        {
+          "name": "extra",
+          "required": false,
+          "type": "buffer",
           "version": 1
         }
       ]
@@ -77,26 +115,6 @@
           "name": "discoveryKey",
           "required": true,
           "type": "buffer",
-          "version": 1
-        }
-      ]
-    },
-    {
-      "name": "forward-push-request",
-      "namespace": "blind-push",
-      "compact": false,
-      "flagsPosition": 1,
-      "fields": [
-        {
-          "name": "payload",
-          "required": true,
-          "type": "@blind-push/push-payload",
-          "version": 1
-        },
-        {
-          "name": "appId",
-          "required": false,
-          "type": "string",
           "version": 1
         }
       ]
