@@ -5,6 +5,7 @@ const cenc = require('compact-encoding')
 const remote = require('hypercore/lib/fully-remote-proof')
 
 const schema = require('./spec/hyperschema')
+const BlindPushError = require('./lib/errors')
 
 const PushPayload = schema.getEncoding('@blind-push/push-payload')
 const ProofPayload = schema.getEncoding('@blind-push/proof-payload')
@@ -15,12 +16,12 @@ const [NS_BLINDING] = crypto.namespace('blind-push', 1)
 // Leave room for the outer payload framing plus some safety margin.
 const MAX_PAYLOAD_SIZE = 4000 - 32 - 1 - 16
 
+const VERSION = 0
+
 /**
  * @typedef {object} PushPayload
  * @property {Uint8Array} discoveryKey
  * @property {Uint8Array} payload
- * @property {number} [version=0]
- * @property {Uint8Array | null} [extra=null]
  */
 
 /**
@@ -37,7 +38,6 @@ const MAX_PAYLOAD_SIZE = 4000 - 32 - 1 - 16
  * @param {Uint8Array} [opts.roomDiscoveryKey=crypto.discoveryKey(roomKey)]
  * @param {number} [opts.index=core.length - 1]
  * @param {number} [opts.timeout=10000]
- * @param {number} [opts.version=0]
  * @param {Uint8Array | null} [opts.extra=null]
  * @returns {Promise<PushPayload>}
  */
@@ -48,7 +48,6 @@ async function createNotification(
     roomDiscoveryKey = crypto.discoveryKey(roomKey),
     index = core.length - 1,
     timeout = 10_000,
-    version = 0,
     extra = null
   } = {}
 ) {
@@ -59,15 +58,20 @@ async function createNotification(
     raw: true
   })
 
-  let payload = await encryptNotificationProof(core, roomKey, block, index, version, { extra })
+  let payload = await encryptNotificationProof(core, roomKey, block, index, { extra })
 
   // If payload exceeds MAX_PAYLOAD_SIZE, don't send it via Firebase
   // exclude the block and let the client fetch it via hypercore replication
   if (payload.byteLength > MAX_PAYLOAD_SIZE) {
-    payload = await encryptNotificationProof(core, roomKey, null, 0, version, { extra })
+    payload = await encryptNotificationProof(core, roomKey, null, 0, { extra })
+
+    // this may occur if the ‘extra’ field is too large
+    if (payload.byteLength > MAX_PAYLOAD_SIZE) {
+      throw BlindPushError.PAYLOAD_TOO_LARGE()
+    }
   }
 
-  return { discoveryKey: roomDiscoveryKey, payload, version, extra }
+  return { discoveryKey: roomDiscoveryKey, payload }
 }
 
 /**
@@ -152,14 +156,13 @@ function decryptProof(roomKey, encrypted) {
  * @param {Uint8Array} roomKey
  * @param {Uint8Array | null} block
  * @param {number} index
- * @param {number} version
  * @param {object} [opts]
  * @param {Uint8Array | null} [opts.extra=null]
  * @returns {Promise<Uint8Array>}
  */
-async function encryptNotificationProof(core, roomKey, block, index, version, { extra } = {}) {
+async function encryptNotificationProof(core, roomKey, block, index, { extra } = {}) {
   const proof = await remote.proof(core, { block, index })
-  const rawProofPayload = cenc.encode(ProofPayload, { version, extra, proof })
+  const rawProofPayload = cenc.encode(ProofPayload, { version: VERSION, extra, proof })
   return encryptProof(roomKey, rawProofPayload)
 }
 

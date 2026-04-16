@@ -16,6 +16,7 @@
   "main": "index.js",
   "exports": {
     ".": "./index.js",
+    "./errors": "./lib/errors.js",
     "./encodings": "./lib/encodings.js"
   },
   "files": [

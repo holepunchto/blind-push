@@ -11,14 +11,12 @@ test('createNotification/readNotification happy path', async function (t) {
   await core.append(block)
 
   const extra = b4a.from('metadata')
-  const push = await createNotification(core, { version: 7, extra })
+  const push = await createNotification(core, { extra })
   t.alike(push.discoveryKey, core.discoveryKey, 'createNotification returns the room discovery key')
-  t.is(push.version, 7, 'createNotification forwards the notification version')
-  t.alike(push.extra, extra, 'createNotification forwards the notification extra payload')
 
   const result = await readNotification(core.state.storage.store, core.key, push.payload)
   t.ok(result, 'readNotification verifies the push proof')
-  t.is(result.version, 7, 'readNotification returns the embedded proof version')
+  t.is(result.version, 0, 'readNotification returns the embedded proof version')
   t.alike(result.extra, extra, 'readNotification returns the embedded proof extra payload')
   t.alike(result.result.key, core.key, 'readNotification returns the sender key')
   t.alike(
@@ -44,8 +42,6 @@ test('createNotification omits block data for oversized payloads', async functio
 
   const push = await createNotification(core)
   t.alike(push.discoveryKey, core.discoveryKey, 'createNotification returns the room discovery key')
-  t.is(push.version, 0, 'createNotification defaults version to 0')
-  t.is(push.extra, null, 'createNotification defaults extra to null')
 
   const result = await readNotification(core.state.storage.store, core.key, push.payload)
   t.ok(result, 'readNotification verifies the compact push proof')
@@ -64,6 +60,18 @@ test('createNotification omits block data for oversized payloads', async functio
     'readNotification does not report newer data for the same core state'
   )
   t.is(result.result.block, null, 'readNotification omits block data when the payload is too large')
+})
+
+test('createNotification throws when the compact payload still exceeds the size budget', async function (t) {
+  const core = await createCore(t)
+
+  await core.append(b4a.from('hello world'))
+
+  await t.exception(
+    createNotification(core, { extra: b4a.alloc(4_000, 'a') }),
+    /PAYLOAD_TOO_LARGE/,
+    'createNotification rejects when the compact proof is still too large'
+  )
 })
 
 test('createNotification throws on an empty core', async function (t) {

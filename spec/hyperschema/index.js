@@ -63,32 +63,18 @@ const encoding2 = {
   preencode(state, m) {
     encoding2_0.preencode(state, m.block)
     encoding2_1.preencode(state, m.destination)
-    c.uint.preencode(state, m.version)
-    state.end++ // max flag is 1 so always one byte
-
-    if (m.extra) c.buffer.preencode(state, m.extra)
   },
   encode(state, m) {
-    const flags = m.extra ? 1 : 0
-
     encoding2_0.encode(state, m.block)
     encoding2_1.encode(state, m.destination)
-    c.uint.encode(state, m.version)
-    c.uint.encode(state, flags)
-
-    if (m.extra) c.buffer.encode(state, m.extra)
   },
   decode(state) {
     const r0 = encoding2_0.decode(state)
     const r1 = encoding2_1.decode(state)
-    const r2 = c.uint.decode(state)
-    const flags = c.uint.decode(state)
 
     return {
       block: r0,
-      destination: r1,
-      version: r2,
-      extra: (flags & 1) !== 0 ? c.buffer.decode(state) : null
+      destination: r1
     }
   }
 }
