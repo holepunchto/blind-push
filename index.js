@@ -97,8 +97,9 @@ function decode(raw) {
  * @returns {Promise<any | null>}
  */
 async function readNotification(store, roomKey, payload) {
-  const proofPayload = decryptProof(roomKey, payload)
-  if (!proofPayload) return null
+  const rawProofPayload = decrypt(roomKey, payload)
+  if (!rawProofPayload) return null
+  const proofPayload = cenc.decode(ProofPayload, rawProofPayload)
   const result = await remote.verify(store, proofPayload.proof, { referrer: roomKey })
   if (!result) return null
   return { result, version: proofPayload.version, extra: proofPayload.extra }
@@ -116,19 +117,19 @@ function generateBlindingKey(roomKey) {
 
 /**
  * @param {Uint8Array} roomKey
- * @param {Uint8Array} proof
+ * @param {Uint8Array} msg
  * @returns {Uint8Array}
  */
-function encryptProof(roomKey, proof) {
+function encrypt(roomKey, msg) {
   const secretKey = generateBlindingKey(roomKey)
   const encrypted = b4a.allocUnsafe(
-    proof.byteLength + sodium.crypto_secretbox_MACBYTES + sodium.crypto_secretbox_NONCEBYTES
+    msg.byteLength + sodium.crypto_secretbox_MACBYTES + sodium.crypto_secretbox_NONCEBYTES
   )
   const nonce = encrypted.subarray(0, sodium.crypto_secretbox_NONCEBYTES)
   const box = encrypted.subarray(nonce.byteLength)
 
   sodium.randombytes_buf(nonce)
-  sodium.crypto_secretbox_easy(box, proof, nonce, secretKey)
+  sodium.crypto_secretbox_easy(box, msg, nonce, secretKey)
 
   return encrypted
 }
@@ -136,19 +137,19 @@ function encryptProof(roomKey, proof) {
 /**
  * @param {Uint8Array} roomKey
  * @param {Uint8Array} encrypted
- * @returns {ProofPayload | null}
+ * @returns {Buffer | null}
  */
-function decryptProof(roomKey, encrypted) {
+function decrypt(roomKey, encrypted) {
   const secretKey = generateBlindingKey(roomKey)
   const nonce = encrypted.subarray(0, sodium.crypto_secretbox_NONCEBYTES)
   const box = encrypted.subarray(nonce.byteLength)
-  const rawProofPayload = b4a.allocUnsafe(box.byteLength - sodium.crypto_secretbox_MACBYTES)
+  const msg = b4a.allocUnsafe(box.byteLength - sodium.crypto_secretbox_MACBYTES)
 
-  if (!sodium.crypto_secretbox_open_easy(rawProofPayload, box, nonce, secretKey)) {
+  if (!sodium.crypto_secretbox_open_easy(msg, box, nonce, secretKey)) {
     return null
   }
 
-  return cenc.decode(ProofPayload, rawProofPayload)
+  return msg
 }
 
 /**
@@ -163,7 +164,7 @@ function decryptProof(roomKey, encrypted) {
 async function encryptNotificationProof(core, roomKey, block, index, { extra } = {}) {
   const proof = await remote.proof(core, { block, index })
   const rawProofPayload = cenc.encode(ProofPayload, { version: VERSION, extra, proof })
-  return encryptProof(roomKey, rawProofPayload)
+  return encrypt(roomKey, rawProofPayload)
 }
 
 module.exports = {
