@@ -4,7 +4,7 @@ const Hyperschema = require('hyperschema')
 
 const SCHEMA_DIR = path.join(__dirname, 'spec', 'hyperschema')
 
-const schema = Hyperschema.from(SCHEMA_DIR, { versioned: false })
+const schema = Hyperschema.from(SCHEMA_DIR, { versioned: true })
 const blindPush = schema.namespace('blind-push')
 
 blindPush.register({
@@ -51,6 +51,27 @@ blindPush.register({
       name: 'destination',
       type: '@blind-push/blind-peer-request-destination',
       required: true
+    }
+  ]
+})
+
+blindPush.register({
+  name: 'proof-payload',
+  fields: [
+    {
+      name: 'version',
+      type: 'uint',
+      required: true
+    },
+    {
+      name: 'proof',
+      type: 'buffer',
+      required: true
+    },
+    {
+      name: 'extra',
+      type: 'buffer',
+      required: false
     }
   ]
 })

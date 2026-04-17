@@ -10,22 +10,29 @@ test('createNotification/readNotification happy path', async function (t) {
   const block = b4a.from('hello world')
   await core.append(block)
 
-  const push = await createNotification(core)
+  const extra = b4a.from('metadata')
+  const push = await createNotification(core, { extra })
   t.alike(push.discoveryKey, core.discoveryKey, 'createNotification returns the room discovery key')
 
   const result = await readNotification(core.state.storage.store, core.key, push.payload)
   t.ok(result, 'readNotification verifies the push proof')
-  t.alike(result.key, core.key, 'readNotification returns the sender key')
+  t.is(result.version, 0, 'readNotification returns the embedded proof version')
+  t.alike(result.extra, extra, 'readNotification returns the embedded proof extra payload')
+  t.alike(result.result.key, core.key, 'readNotification returns the sender key')
   t.alike(
-    result.discoveryKey,
+    result.result.discoveryKey,
     core.discoveryKey,
     'readNotification returns the sender discovery key'
   )
-  t.is(result.length, 1, 'readNotification returns the current core length')
-  t.is(result.newer, false, 'readNotification does not report newer data for the same core state')
-  t.is(result.block.index, 0, 'readNotification returns the appended block index')
-  t.ok(result.block.value, 'readNotification returns the appended block value')
-  t.alike(result.block.value, block, 'readNotification returns the appended block value')
+  t.is(result.result.length, 1, 'readNotification returns the current core length')
+  t.is(
+    result.result.newer,
+    false,
+    'readNotification does not report newer data for the same core state'
+  )
+  t.is(result.result.block.index, 0, 'readNotification returns the appended block index')
+  t.ok(result.result.block.value, 'readNotification returns the appended block value')
+  t.alike(result.result.block.value, block, 'readNotification returns the appended block value')
 })
 
 test('createNotification omits block data for oversized payloads', async function (t) {
@@ -38,15 +45,33 @@ test('createNotification omits block data for oversized payloads', async functio
 
   const result = await readNotification(core.state.storage.store, core.key, push.payload)
   t.ok(result, 'readNotification verifies the compact push proof')
-  t.alike(result.key, core.key, 'readNotification returns the sender key')
+  t.is(result.version, 0, 'readNotification defaults embedded version to 0')
+  t.is(result.extra, null, 'readNotification defaults embedded extra to null')
+  t.alike(result.result.key, core.key, 'readNotification returns the sender key')
   t.alike(
-    result.discoveryKey,
+    result.result.discoveryKey,
     core.discoveryKey,
     'readNotification returns the sender discovery key'
   )
-  t.is(result.length, 1, 'readNotification returns the current core length')
-  t.is(result.newer, false, 'readNotification does not report newer data for the same core state')
-  t.is(result.block, null, 'readNotification omits block data when the payload is too large')
+  t.is(result.result.length, 1, 'readNotification returns the current core length')
+  t.is(
+    result.result.newer,
+    false,
+    'readNotification does not report newer data for the same core state'
+  )
+  t.is(result.result.block, null, 'readNotification omits block data when the payload is too large')
+})
+
+test('createNotification throws when the compact payload still exceeds the size budget', async function (t) {
+  const core = await createCore(t)
+
+  await core.append(b4a.from('hello world'))
+
+  await t.exception(
+    createNotification(core, { extra: b4a.alloc(4_000, 'a') }),
+    /PAYLOAD_TOO_LARGE/,
+    'createNotification rejects when the compact proof is still too large'
+  )
 })
 
 test('createNotification throws on an empty core', async function (t) {

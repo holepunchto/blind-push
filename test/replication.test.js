@@ -23,16 +23,22 @@ test('createNotification/readNotification replication happy path', async functio
   await receiver.update({ wait: true })
   const result = await readNotification(receiver.state.storage.store, receiver.key, push.payload)
   t.ok(result, 'readNotification verifies the push proof on the replica')
-  t.alike(result.key, sender.key, 'readNotification returns the sender key')
+  t.is(result.version, 0, 'readNotification defaults embedded version to 0')
+  t.is(result.extra, null, 'readNotification defaults embedded extra to null')
+  t.alike(result.result.key, sender.key, 'readNotification returns the sender key')
   t.alike(
-    result.discoveryKey,
+    result.result.discoveryKey,
     sender.discoveryKey,
     'readNotification returns the sender discovery key'
   )
-  t.is(result.length, 1, 'readNotification returns the current core length')
-  t.is(result.newer, false, 'readNotification does not report newer data for the replicated core')
-  t.is(result.block.index, 0, 'readNotification returns the appended block index')
-  t.alike(result.block.value, block, 'readNotification returns the appended block value')
+  t.is(result.result.length, 1, 'readNotification returns the current core length')
+  t.is(
+    result.result.newer,
+    false,
+    'readNotification does not report newer data for the replicated core'
+  )
+  t.is(result.result.block.index, 0, 'readNotification returns the appended block index')
+  t.alike(result.result.block.value, block, 'readNotification returns the appended block value')
 })
 
 test('createNotification times out when the replication link is suspended', async function (t) {
@@ -127,23 +133,27 @@ test('readNotification reports newer data while receiver replication is suspende
   const result = await readNotification(receiver.state.storage.store, receiver.key, push.payload)
 
   t.ok(result, 'readNotification still verifies the push proof while the receiver is behind')
-  t.alike(result.key, sender.key, 'readNotification returns the sender key')
+  t.alike(result.result.key, sender.key, 'readNotification returns the sender key')
   t.alike(
-    result.discoveryKey,
+    result.result.discoveryKey,
     sender.discoveryKey,
     'readNotification returns the sender discovery key'
   )
-  t.is(result.newer, true, 'readNotification reports newer data when the receiver core is behind')
-  t.is(result.length, 2, 'readNotification returns the incoming core length')
-  t.is(result.block.index, 1, 'readNotification returns the pushed block index')
-  t.alike(result.block.value, next, 'readNotification returns the pushed block value')
+  t.is(
+    result.result.newer,
+    true,
+    'readNotification reports newer data when the receiver core is behind'
+  )
+  t.is(result.result.length, 2, 'readNotification returns the incoming core length')
+  t.is(result.result.block.index, 1, 'readNotification returns the pushed block index')
+  t.alike(result.result.block.value, next, 'readNotification returns the pushed block value')
   t.is(
     receiver.length,
     1,
     'readNotification does not advance the local receiver core while suspended'
   )
 
-  const blockPromise = receiver.get(result.block.index, { wait: true })
+  const blockPromise = receiver.get(result.result.block.index, { wait: true })
   await receiverLink.resume()
 
   t.alike(await blockPromise, next, 'receiver eventually replicates the suspended block')

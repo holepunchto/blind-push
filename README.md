@@ -39,6 +39,7 @@ In the deployed flow, `core` is typically the blind-peer's replicated view of th
 - `roomDiscoveryKey`: optional discovery key to expose in the returned payload. Defaults to `crypto.discoveryKey(roomKey)`.
 - `index`: optional block index to prove. Defaults to `core.length - 1`.
 - `timeout`: optional timeout passed to `core.get(...)`. Defaults to `10000`.
+- `extra`: optional metadata embedded in the encrypted proof payload.
 
 Resolves to:
 
@@ -46,6 +47,7 @@ Resolves to:
 - `notification.payload`: encrypted proof bytes suitable for forwarding in a push payload.
 
 If the encrypted payload exceeds the internal size budget, the returned notification omits inline block data and carries a compact proof instead.
+The embedded `version` and `extra` fields live inside the encrypted proof payload and are exposed after decryption via `readNotification(...)`.
 
 #### `const result = await blindPush.readNotification(store, roomKey, payload)`
 
@@ -79,9 +81,9 @@ Decode a `PushPayload` buffer back into `{ discoveryKey, payload }`.
 
 Exports the package error type.
 
-#### `BlindPushError.INVALID_DECRYPTION_KEY()`
+#### `BlindPushError.PAYLOAD_TOO_LARGE()`
 
-Returned by `readNotification(...)` when the payload cannot be decrypted with the provided `roomKey`, or when the payload is malformed.
+Returned by `createNotification(...)` when the compact proof still exceeds the internal push payload size budget, typically because `extra` is too large.
 
 ### Encodings
 

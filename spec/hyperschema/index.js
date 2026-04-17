@@ -79,8 +79,39 @@ const encoding2 = {
   }
 }
 
-// @blind-push/push-payload
+// @blind-push/proof-payload
 const encoding3 = {
+  preencode(state, m) {
+    c.uint.preencode(state, m.version)
+    c.buffer.preencode(state, m.proof)
+    state.end++ // max flag is 1 so always one byte
+
+    if (m.extra) c.buffer.preencode(state, m.extra)
+  },
+  encode(state, m) {
+    const flags = m.extra ? 1 : 0
+
+    c.uint.encode(state, m.version)
+    c.buffer.encode(state, m.proof)
+    c.uint.encode(state, flags)
+
+    if (m.extra) c.buffer.encode(state, m.extra)
+  },
+  decode(state) {
+    const r0 = c.uint.decode(state)
+    const r1 = c.buffer.decode(state)
+    const flags = c.uint.decode(state)
+
+    return {
+      version: r0,
+      proof: r1,
+      extra: (flags & 1) !== 0 ? c.buffer.decode(state) : null
+    }
+  }
+}
+
+// @blind-push/push-payload
+const encoding4 = {
   preencode(state, m) {
     c.buffer.preencode(state, m.payload)
     c.buffer.preencode(state, m.discoveryKey)
@@ -100,38 +131,8 @@ const encoding3 = {
   }
 }
 
-// @blind-push/forward-push-request.payload
-const encoding4_0 = c.frame(encoding3)
-
-// @blind-push/forward-push-request
-const encoding4 = {
-  preencode(state, m) {
-    encoding4_0.preencode(state, m.payload)
-    state.end++ // max flag is 1 so always one byte
-
-    if (m.appId) c.string.preencode(state, m.appId)
-  },
-  encode(state, m) {
-    const flags = m.appId ? 1 : 0
-
-    encoding4_0.encode(state, m.payload)
-    c.uint.encode(state, flags)
-
-    if (m.appId) c.string.encode(state, m.appId)
-  },
-  decode(state) {
-    const r0 = encoding4_0.decode(state)
-    const flags = c.uint.decode(state)
-
-    return {
-      payload: r0,
-      appId: (flags & 1) !== 0 ? c.string.decode(state) : null
-    }
-  }
-}
-
 // @blind-push/gateway-forward-request.payload
-const encoding5_0 = encoding4_0
+const encoding5_0 = c.frame(encoding4)
 
 // @blind-push/gateway-forward-request
 const encoding5 = {
@@ -189,9 +190,9 @@ function getEncoding(name) {
       return encoding1
     case '@blind-push/blind-peer-request':
       return encoding2
-    case '@blind-push/push-payload':
+    case '@blind-push/proof-payload':
       return encoding3
-    case '@blind-push/forward-push-request':
+    case '@blind-push/push-payload':
       return encoding4
     case '@blind-push/gateway-forward-request':
       return encoding5
