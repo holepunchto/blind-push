@@ -110,7 +110,7 @@ async function readNotification(store, roomKey, payload) {
  * @returns {Uint8Array}
  */
 function generateBlindingKey(roomKey) {
-  const blindingKey = b4a.allocUnsafe(sodium.crypto_aead_xchacha20poly1305_ietf_KEYBYTES)
+  const blindingKey = b4a.allocUnsafe(sodium.crypto_secretbox_KEYBYTES)
   sodium.crypto_generichash(blindingKey, b4a.concat([NS_BLINDING, roomKey]))
   return blindingKey
 }
