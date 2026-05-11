@@ -12,7 +12,7 @@ test('createNotification/readNotification replication happy path', async functio
   const block = b4a.from('hello world')
   await sender.append(block)
 
-  await blindPeer.update({ wait: true })
+  await blindPeer.get(0, { wait: true, timeout: 500 })
   const push = await createNotification(blindPeer)
   t.alike(
     push.discoveryKey,
@@ -20,7 +20,6 @@ test('createNotification/readNotification replication happy path', async functio
     'createNotification returns the room discovery key'
   )
 
-  await receiver.update({ wait: true })
   const result = await readNotification(receiver.state.storage.store, receiver.key, push.payload)
   t.ok(result, 'readNotification verifies the push proof on the replica')
   t.is(result.version, 0, 'readNotification defaults embedded version to 0')
@@ -45,12 +44,11 @@ test('createNotification times out when the replication link is suspended', asyn
   const { sender, blindPeer, senderLink } = await setupE2ENodes(t)
 
   await sender.append(b4a.from('init'))
-  await blindPeer.update({ wait: true })
+  await blindPeer.get(0, { wait: true, timeout: 500 })
 
   await senderLink.suspend()
   await sender.append(b4a.from('next'))
 
-  await blindPeer.update({ wait: true })
   await t.exception(
     createNotification(blindPeer, { index: sender.length - 1, timeout: 500 }),
     /REQUEST_TIMEOUT/,
@@ -62,7 +60,7 @@ test('createNotification resolves after sender replication resumes before timeou
   const { sender, blindPeer, senderLink } = await setupE2ENodes(t)
 
   await sender.append(b4a.from('init'))
-  await blindPeer.update({ wait: true })
+  await blindPeer.get(0, { wait: true, timeout: 500 })
 
   await senderLink.suspend()
   await sender.append(b4a.from('next'))
@@ -104,12 +102,11 @@ test('readNotification reports newer data while receiver replication is suspende
   const next = b4a.from('next')
 
   await sender.append(init)
-  await blindPeer.update({ wait: true })
-  await receiver.update({ wait: true })
 
-  await new Promise((resolve) => setTimeout(resolve, 200))
-  t.is(blindPeer.length, 1, 'sanity check blind peer core')
-  t.is(receiver.length, 1, 'sanity check receiver core')
+  await Promise.all([
+    blindPeer.get(0, { wait: true, timeout: 500 }),
+    receiver.get(0, { wait: true, timeout: 500 })
+  ])
 
   const initialPush = await createNotification(blindPeer)
   const initialResult = await readNotification(
@@ -124,8 +121,9 @@ test('readNotification reports newer data while receiver replication is suspende
   await receiverLink.suspend()
   await sender.append(next)
 
-  await blindPeer.update({ wait: true })
-  await receiver.update({ wait: true })
+  // wait a while for the block to replicate
+  await new Promise((resolve) => setTimeout(resolve, 500))
+
   t.is(blindPeer.length, 2, 'blind peers receive new block')
   t.is(receiver.length, 1, 'receiver stays on the old length while the blindPeer link is suspended')
 
