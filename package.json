@@ -34,7 +34,7 @@
   },
   "dependencies": {
     "b4a": "^1.8.0",
-    "compact-encoding": "^2.19.0",
+    "compact-encoding": "^3.1.0",
     "hypercore": "^11.27.14",
     "hypercore-crypto": "^3.6.1",
     "hyperschema": "^1.10.4",
