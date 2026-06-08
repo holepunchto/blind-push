@@ -51,6 +51,16 @@ blindPush.register({
       name: 'destination',
       type: '@blind-push/blind-peer-request-destination',
       required: true
+    },
+    {
+      name: 'appId',
+      type: 'string',
+      required: false
+    },
+    {
+      name: 'extra',
+      type: 'buffer',
+      required: false
     }
   ]
 })
