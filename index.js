@@ -16,17 +16,17 @@ const [NS_BLINDING] = crypto.namespace('blind-push', 1)
 // Leave room for the outer payload framing plus some safety margin.
 const MAX_PAYLOAD_SIZE = 4000 - 32 - 1 - 16
 
-const VERSION = 0
+const VERSION = 3
 
 /**
  * @typedef {object} PushPayload
+ * @property {number} version
  * @property {Uint8Array} discoveryKey
  * @property {Uint8Array} payload
  */
 
 /**
  * @typedef {object} ProofPayload
- * @property {number} version
  * @property {Uint8Array} proof
  * @property {Uint8Array | null} [extra=null]
  */
@@ -71,7 +71,7 @@ async function createNotification(
     }
   }
 
-  return { discoveryKey: roomDiscoveryKey, payload }
+  return { discoveryKey: roomDiscoveryKey, payload, version: VERSION }
 }
 
 /**
@@ -102,7 +102,7 @@ async function readNotification(store, roomKey, payload) {
   const proofPayload = cenc.decode(ProofPayload, rawProofPayload)
   const result = await remote.verify(store, proofPayload.proof, { referrer: roomKey })
   if (!result) return null
-  return { result, version: proofPayload.version, extra: proofPayload.extra }
+  return { result, extra: proofPayload.extra }
 }
 
 /**

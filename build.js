@@ -69,11 +69,6 @@ blindPush.register({
   name: 'proof-payload',
   fields: [
     {
-      name: 'version',
-      type: 'uint',
-      required: true
-    },
-    {
       name: 'proof',
       type: 'buffer',
       required: true
@@ -89,6 +84,11 @@ blindPush.register({
 blindPush.register({
   name: 'push-payload',
   fields: [
+    {
+      name: 'version',
+      type: 'uint',
+      required: true
+    },
     {
       name: 'payload',
       type: 'buffer',
