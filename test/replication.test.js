@@ -19,10 +19,10 @@ test('createNotification/readNotification replication happy path', async functio
     sender.discoveryKey,
     'createNotification returns the room discovery key'
   )
+  t.is(push.version, 3, 'createNotification returns the outer payload version')
 
   const result = await readNotification(receiver.state.storage.store, receiver.key, push.payload)
   t.ok(result, 'readNotification verifies the push proof on the replica')
-  t.is(result.version, 0, 'readNotification defaults embedded version to 0')
   t.is(result.extra, null, 'readNotification defaults embedded extra to null')
   t.alike(result.result.key, sender.key, 'readNotification returns the sender key')
   t.alike(

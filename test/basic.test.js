@@ -12,11 +12,11 @@ test('createNotification/readNotification happy path', async function (t) {
 
   const extra = b4a.from('metadata')
   const push = await createNotification(core, { extra })
+  t.is(push.version, 3, 'createNotification returns the outer payload version')
   t.alike(push.discoveryKey, core.discoveryKey, 'createNotification returns the room discovery key')
 
   const result = await readNotification(core.state.storage.store, core.key, push.payload)
   t.ok(result, 'readNotification verifies the push proof')
-  t.is(result.version, 0, 'readNotification returns the embedded proof version')
   t.alike(result.extra, extra, 'readNotification returns the embedded proof extra payload')
   t.alike(result.result.key, core.key, 'readNotification returns the sender key')
   t.alike(
@@ -41,11 +41,11 @@ test('createNotification omits block data for oversized payloads', async functio
   await core.append(b4a.alloc(4_000, 'a'))
 
   const push = await createNotification(core)
+  t.is(push.version, 3, 'createNotification returns the outer payload version')
   t.alike(push.discoveryKey, core.discoveryKey, 'createNotification returns the room discovery key')
 
   const result = await readNotification(core.state.storage.store, core.key, push.payload)
   t.ok(result, 'readNotification verifies the compact push proof')
-  t.is(result.version, 0, 'readNotification defaults embedded version to 0')
   t.is(result.extra, null, 'readNotification defaults embedded extra to null')
   t.alike(result.result.key, core.key, 'readNotification returns the sender key')
   t.alike(

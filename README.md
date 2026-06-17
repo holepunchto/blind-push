@@ -1,20 +1,22 @@
 # blind-push
 
-Create encrypted Hypercore push notifications for the sender core -> blind-peer -> push forwarder -> FCM -> receiver core flow.
+Create encrypted Hypercore push notifications for the sender core -> blind-peering -> blind-peer -> push forwarder -> FCM -> receiver core flow.
 
 ## Overview
 
-This package turns Hypercore proofs into compact notification payloads for the blind-peer delivery path. In the deployed flow, the sender core does not hand craft the push payload itself. Instead, it sends an RPC request to a blind-peer, the blind-peer generates the encrypted payload from its replicated Hypercore state, then sends an RPC request to a push forwarder, which delivers the payload over FCM to the receiver core.
+This package turns Hypercore proofs into compact notification payloads for the blind-peer delivery path. In the deployed flow, the sender core does not hand craft the push payload itself. Instead, the application asks `blind-peering` to send a notification. `blind-peering` builds the `BlindPeerRequest` message and sends it to the selected blind peer over the `blind-peer-muxer` Protomux channel. The blind peer generates the encrypted payload from its replicated Hypercore state, then sends a `forward-push` request to a push forwarder, which delivers the payload over FCM to the receiver core.
 
 High level:
 
 ```txt
 sender core
-  -> BlindPeerRequest RPC
+  -> blindPeering.sendNotification(...)
+blind-peering
+  -> BlindPeerRequest over blind-peer-muxer
 blind-peer
   -> createNotification(...)
   -> { discoveryKey, payload }
-  -> ForwardPushRequest RPC
+  -> forward-push request
 push forwarder
   -> FCM
 receiver core
@@ -92,5 +94,5 @@ Returned by `createNotification(...)` when the compact proof still exceeds the i
 Exports the generated compact encodings used by the package:
 
 - `encodings.PushPayload`: `{ discoveryKey, payload }`, the encrypted push payload delivered to the receiver.
-- `encodings.BlindPeerRequest`: sender -> blind-peer RPC envelope with `{ block: { key, index }, destination: { key, discoveryKey } }`.
-- `encodings.ForwardPushRequest`: blind-peer -> push forwarder RPC envelope with `{ payload, appId? }`.
+- `encodings.BlindPeerRequest`: notification message encoding used by `blind-peering` and `blind-peer-muxer` with `{ block: { key, index }, destination: { key, discoveryKey }, appId?, extra? }`.
+- `encodings.ForwardPushRequest`: blind-peer -> push forwarder request encoding with `{ payload, appId? }`.
