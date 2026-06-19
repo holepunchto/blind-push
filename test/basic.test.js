@@ -38,7 +38,7 @@ test('createNotification/readNotification happy path', async function (t) {
 test('createNotification omits block data for oversized payloads', async function (t) {
   const core = await createCore(t)
 
-  await core.append(b4a.alloc(4_000, 'a'))
+  await core.append(b4a.alloc(1_300, 'a'))
 
   const push = await createNotification(core)
   t.is(push.version, 3, 'createNotification returns the outer payload version')
