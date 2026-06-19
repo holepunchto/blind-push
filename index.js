@@ -12,9 +12,12 @@ const ProofPayload = schema.getEncoding('@blind-push/proof-payload')
 
 const [NS_BLINDING] = crypto.namespace('blind-push', 1)
 
-// Firebase limit is 4000, Apple is 4096.
-// Leave room for the outer payload framing plus some safety margin.
-const MAX_PAYLOAD_SIZE = 4000 - 32 - 1 - 16
+// references: https://firebase.google.com/docs/cloud-messaging/error-codes
+// "Message too big: Check that the total size of the payload data included in a message does not exceed FCM limits: 4096 bytes for most messages, or 2048 bytes in the case of messages to topics. This includes both the keys and the values."
+const MAX_FCM_TOPIC_MESSAGE_SIZE = 2048
+const GATEWAY_ENVELOPE_SIZE = 85
+const MAX_PAYLOAD_BASE64_SIZE = MAX_FCM_TOPIC_MESSAGE_SIZE - GATEWAY_ENVELOPE_SIZE - 8 // Leave 8 bytes as a safety margin
+const MAX_PAYLOAD_BYTE_SIZE = Math.floor((MAX_PAYLOAD_BASE64_SIZE * 3) / 4) // roughly estimate the original binary size from a Base64 length
 
 const VERSION = 3
 
@@ -62,11 +65,11 @@ async function createNotification(
 
   // If payload exceeds MAX_PAYLOAD_SIZE, don't send it via Firebase
   // exclude the block and let the client fetch it via hypercore replication
-  if (payload.byteLength > MAX_PAYLOAD_SIZE) {
+  if (payload.byteLength > MAX_PAYLOAD_BYTE_SIZE) {
     payload = await encryptNotificationProof(core, roomKey, null, 0, { extra })
 
     // this may occur if the ‘extra’ field is too large
-    if (payload.byteLength > MAX_PAYLOAD_SIZE) {
+    if (payload.byteLength > MAX_PAYLOAD_BYTE_SIZE) {
       throw BlindPushError.PAYLOAD_TOO_LARGE()
     }
   }
