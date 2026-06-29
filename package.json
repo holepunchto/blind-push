@@ -1,6 +1,6 @@
 {
   "name": "blind-push",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "P2P Push notification gateway that work with blind-peer",
   "homepage": "https://github.com/holepunchto/blind-push#readme",
   "bugs": {
