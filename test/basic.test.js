@@ -68,7 +68,7 @@ test('createNotification throws when the compact payload still exceeds the size 
   await core.append(b4a.from('hello world'))
 
   await t.exception(
-    createNotification(core, { extra: b4a.alloc(4_000, 'a') }),
+    createNotification(core, { extra: b4a.alloc(1_300, 'a') }),
     /PAYLOAD_TOO_LARGE/,
     'createNotification rejects when the compact proof is still too large'
   )
