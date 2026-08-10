@@ -70,7 +70,11 @@ async function createNotification(
 
     // this may occur if the ‘extra’ field is too large
     if (payload.byteLength > MAX_PAYLOAD_BYTE_SIZE) {
-      throw BlindPushError.PAYLOAD_TOO_LARGE()
+      payload = await encryptNotificationProof(core, roomKey, null, 0)
+
+      if (payload.byteLength > MAX_PAYLOAD_BYTE_SIZE) {
+        throw BlindPushError.PAYLOAD_TOO_LARGE()
+      }
     }
   }
 

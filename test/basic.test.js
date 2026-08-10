@@ -62,15 +62,44 @@ test('createNotification omits block data for oversized payloads', async functio
   t.is(result.result.block, null, 'readNotification omits block data when the payload is too large')
 })
 
-test('createNotification throws when the compact payload still exceeds the size budget', async function (t) {
+test('createNotification drops oversized extra from the compact payload', async function (t) {
   const core = await createCore(t)
 
   await core.append(b4a.from('hello world'))
 
+  const push = await createNotification(core, { extra: b4a.alloc(1_300, 'a') })
+  t.is(push.version, 3, 'createNotification returns the outer payload version')
+  t.alike(push.discoveryKey, core.discoveryKey, 'createNotification returns the room discovery key')
+
+  const result = await readNotification(core.state.storage.store, core.key, push.payload)
+  t.ok(result, 'readNotification verifies the compact push proof')
+  t.is(result.extra, null, 'createNotification drops oversized extra instead of failing')
+  t.alike(result.result.key, core.key, 'readNotification returns the sender key')
+  t.alike(
+    result.result.discoveryKey,
+    core.discoveryKey,
+    'readNotification returns the sender discovery key'
+  )
+  t.is(result.result.length, 1, 'readNotification returns the current core length')
+  t.is(result.result.block, null, 'readNotification omits block data when compacting the payload')
+})
+
+test('createNotification throws when the compact proof itself exceeds the size budget', async function (t) {
+  const core = await createCore(t)
+  await core.append(b4a.from('hello world'))
+
+  const remote = require('hypercore/lib/fully-remote-proof')
+  const originalProof = remote.proof
+  // Force every compact/full proof path over MAX_PAYLOAD_BYTE_SIZE (~1466).
+  remote.proof = async () => b4a.alloc(2_000)
+  t.teardown(() => {
+    remote.proof = originalProof
+  })
+
   await t.exception(
-    createNotification(core, { extra: b4a.alloc(1_300, 'a') }),
+    createNotification(core),
     /PAYLOAD_TOO_LARGE/,
-    'createNotification rejects when the compact proof is still too large'
+    'createNotification rejects when even the no-extra compact proof is too large'
   )
 })
 
