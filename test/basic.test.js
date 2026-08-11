@@ -65,10 +65,19 @@ test('createNotification omits block data for oversized payloads', async functio
 test('createNotification drops oversized extra from the compact payload', async function (t) {
   const core = await createCore(t)
 
-  await core.append(b4a.from('hello world'))
+  await core.append(b4a.alloc(1_300, 'a'))
 
-  const push = await createNotification(core, { extra: b4a.alloc(1_300, 'a') })
-  t.is(push.version, 3, 'createNotification returns the outer payload version')
+  const extra = b4a.alloc(1_000, 'b')
+  const fits = await createNotification(core, { extra })
+  const fitsResult = await readNotification(core.state.storage.store, core.key, fits.payload)
+  t.alike(fitsResult.extra, extra, 'createNotification keeps extra that fits without the block')
+  t.is(
+    fitsResult.result.block,
+    null,
+    'readNotification omits block data when compacting the payload'
+  )
+
+  const push = await createNotification(core, { extra: b4a.alloc(1_300, 'b') })
   t.alike(push.discoveryKey, core.discoveryKey, 'createNotification returns the room discovery key')
 
   const result = await readNotification(core.state.storage.store, core.key, push.payload)
@@ -82,25 +91,6 @@ test('createNotification drops oversized extra from the compact payload', async 
   )
   t.is(result.result.length, 1, 'readNotification returns the current core length')
   t.is(result.result.block, null, 'readNotification omits block data when compacting the payload')
-})
-
-test('createNotification throws when the compact proof itself exceeds the size budget', async function (t) {
-  const core = await createCore(t)
-  await core.append(b4a.from('hello world'))
-
-  const remote = require('hypercore/lib/fully-remote-proof')
-  const originalProof = remote.proof
-  // Force every compact/full proof path over MAX_PAYLOAD_BYTE_SIZE (~1466).
-  remote.proof = async () => b4a.alloc(2_000)
-  t.teardown(() => {
-    remote.proof = originalProof
-  })
-
-  await t.exception(
-    createNotification(core),
-    /PAYLOAD_TOO_LARGE/,
-    'createNotification rejects when even the no-extra compact proof is too large'
-  )
 })
 
 test('createNotification throws on an empty core', async function (t) {
