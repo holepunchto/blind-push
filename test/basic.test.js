@@ -62,16 +62,35 @@ test('createNotification omits block data for oversized payloads', async functio
   t.is(result.result.block, null, 'readNotification omits block data when the payload is too large')
 })
 
-test('createNotification throws when the compact payload still exceeds the size budget', async function (t) {
+test('createNotification drops oversized extra from the compact payload', async function (t) {
   const core = await createCore(t)
 
-  await core.append(b4a.from('hello world'))
+  await core.append(b4a.alloc(1_300, 'a'))
 
-  await t.exception(
-    createNotification(core, { extra: b4a.alloc(1_300, 'a') }),
-    /PAYLOAD_TOO_LARGE/,
-    'createNotification rejects when the compact proof is still too large'
+  const extra = b4a.alloc(1_000, 'b')
+  const fits = await createNotification(core, { extra })
+  const fitsResult = await readNotification(core.state.storage.store, core.key, fits.payload)
+  t.alike(fitsResult.extra, extra, 'createNotification keeps extra that fits without the block')
+  t.is(
+    fitsResult.result.block,
+    null,
+    'readNotification omits block data when compacting the payload'
   )
+
+  const push = await createNotification(core, { extra: b4a.alloc(1_300, 'b') })
+  t.alike(push.discoveryKey, core.discoveryKey, 'createNotification returns the room discovery key')
+
+  const result = await readNotification(core.state.storage.store, core.key, push.payload)
+  t.ok(result, 'readNotification verifies the compact push proof')
+  t.is(result.extra, null, 'createNotification drops oversized extra instead of failing')
+  t.alike(result.result.key, core.key, 'readNotification returns the sender key')
+  t.alike(
+    result.result.discoveryKey,
+    core.discoveryKey,
+    'readNotification returns the sender discovery key'
+  )
+  t.is(result.result.length, 1, 'readNotification returns the current core length')
+  t.is(result.result.block, null, 'readNotification omits block data when compacting the payload')
 })
 
 test('createNotification throws on an empty core', async function (t) {
