@@ -242,9 +242,9 @@ test('push notification from sender to receiver sad path', async function (t) {
     t.is(proof.upgrade.length, addedBlocks * 2, 'upgrade length is as expected')
 
     t.is(await receiver.has(proof.block.index), false, 'block not there yet')
-    await t.exception(
-      receiver.core.verify(proof, null),
-      /INVALID_OPERATION/,
+    t.is(
+      await receiver.core.verify(proof, null),
+      false,
       'push notification fails when prior notification was dropped'
     )
     t.is(await receiver.has(proof.block.index), false, 'block could not be added by the proof')
