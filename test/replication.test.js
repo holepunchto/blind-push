@@ -157,3 +157,96 @@ test('readNotification reports newer data while receiver replication is suspende
   t.alike(await blockPromise, next, 'receiver eventually replicates the suspended block')
   t.is(receiver.length, 2, 'receiver catches up after the replication link resumes')
 })
+
+test('push notification from sender to receiver happy path', async function (t) {
+  const { sender, blindPeer, receiver, receiverLink } = await setupE2ENodes(t)
+
+  const block = b4a.from('hello world')
+  const addedBlocks = 5
+  for (let i = 0; i < addedBlocks; i++) await sender.append(block)
+
+  await blindPeer.get(addedBlocks - 1, { wait: true, timeout: 500 })
+  await receiver.get(addedBlocks - 1, { wait: true, timeout: 500 })
+
+  t.is(receiver.length, addedBlocks, 'receiver has replicated all sender blocks')
+
+  {
+    const push = await createNotification(blindPeer)
+
+    const result = await readNotification(receiver.state.storage.store, receiver.key, push.payload)
+    const proof = result.result.proof
+    t.is(proof.upgrade.length, addedBlocks, 'upgrade length is expected')
+  }
+
+  // receiver app is asleep
+  receiverLink.suspend()
+
+  const oldLen = blindPeer.length
+  const newBlocks = 3
+  for (let i = 0; i < newBlocks; i++) await sender.append(b4a.from('receiver is asleep'))
+
+  await blindPeer.get(oldLen + newBlocks - 1, { wait: true, timeout: 500 })
+  t.is(blindPeer.length, oldLen + newBlocks, 'new blocks added to blind peer')
+  t.is(receiver.length, oldLen, 'receiver does not have the new blocks')
+
+  {
+    const blockIdx = receiver.length - 2
+    const push = await createNotification(blindPeer, { index: blockIdx })
+
+    const result = await readNotification(receiver.state.storage.store, receiver.key, push.payload)
+    const proof = result.result.proof
+    t.is(
+      proof.upgrade.length,
+      addedBlocks,
+      'upgrade length is the old blindPeer core length from the last push notified block'
+    )
+
+    t.is(await receiver.has(blockIdx), false, 'block not there yet')
+    await receiver.core.verify(proof, null)
+    t.is(await receiver.has(blockIdx), true, 'block arrived via the proof')
+  }
+})
+
+test('push notification from sender to receiver sad path', async function (t) {
+  const { sender, blindPeer, receiver, receiverLink } = await setupE2ENodes(t)
+
+  const block = b4a.from('hello world')
+  const addedBlocks = 5
+  for (let i = 0; i < addedBlocks; i++) await sender.append(block)
+
+  await blindPeer.get(addedBlocks - 1, { wait: true, timeout: 500 })
+  await receiver.get(addedBlocks - 1, { wait: true, timeout: 500 })
+
+  t.is(receiver.length, addedBlocks, 'receiver has replicated all sender blocks')
+
+  // receiver app is asleep
+  receiverLink.suspend()
+
+  // First notification dropped
+  await createNotification(blindPeer)
+
+  for (let i = 0; i < addedBlocks; i++) await sender.append(block)
+  await blindPeer.get(addedBlocks * 2 - 1, { wait: true, timeout: 500 })
+
+  // Second notification dropped
+  await createNotification(blindPeer)
+
+  for (let i = 0; i < addedBlocks; i++) await sender.append(block)
+  await blindPeer.get(addedBlocks * 3 - 1, { wait: true, timeout: 500 })
+
+  {
+    const push = await createNotification(blindPeer)
+
+    const result = await readNotification(receiver.state.storage.store, receiver.key, push.payload)
+    const proof = result.result.proof
+    t.is(proof.upgrade.length, addedBlocks * 2, 'upgrade length is as expected')
+
+    t.is(await receiver.has(proof.block.index), false, 'block not there yet')
+    t.is(
+      await receiver.core.verify(proof, null),
+      false,
+      'push notification fails when prior notification was dropped'
+    )
+    t.is(await receiver.has(proof.block.index), false, 'block could not be added by the proof')
+  }
+})

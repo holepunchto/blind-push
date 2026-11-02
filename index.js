@@ -21,6 +21,8 @@ const MAX_PAYLOAD_BYTE_SIZE = Math.floor((MAX_PAYLOAD_BASE64_SIZE * 3) / 4) // r
 
 const VERSION = 3
 
+const LAST_LENGTH_KEY = 'blind-push/last-length'
+
 /**
  * @typedef {object} PushPayload
  * @property {number} version
@@ -61,22 +63,33 @@ async function createNotification(
     raw: true
   })
 
-  let payload = await encryptNotificationProof(core, roomKey, block, index, { extra })
+  const length = core.length
+
+  const stored = await core.getUserData(LAST_LENGTH_KEY)
+  let upgradeLength = stored ? cenc.decode(cenc.uint, stored) : 0
+  if (upgradeLength >= length) upgradeLength = 0
+
+  let payload = await encryptNotificationProof(core, roomKey, block, index, {
+    extra,
+    upgradeLength
+  })
 
   // If payload exceeds MAX_PAYLOAD_SIZE, don't send it via Firebase
   // exclude the block and let the client fetch it via hypercore replication
   if (payload.byteLength > MAX_PAYLOAD_BYTE_SIZE) {
-    payload = await encryptNotificationProof(core, roomKey, null, 0, { extra })
+    payload = await encryptNotificationProof(core, roomKey, null, 0, { extra, upgradeLength })
 
     // this may occur if the ‘extra’ field is too large
     if (payload.byteLength > MAX_PAYLOAD_BYTE_SIZE) {
-      payload = await encryptNotificationProof(core, roomKey, null, 0)
+      payload = await encryptNotificationProof(core, roomKey, null, 0, { upgradeLength })
 
       if (payload.byteLength > MAX_PAYLOAD_BYTE_SIZE) {
         throw BlindPushError.PAYLOAD_TOO_LARGE()
       }
     }
   }
+
+  await core.setUserData(LAST_LENGTH_KEY, cenc.encode(cenc.uint, length))
 
   return { discoveryKey: roomDiscoveryKey, payload, version: VERSION }
 }
@@ -166,10 +179,18 @@ function decrypt(roomKey, encrypted) {
  * @param {number} index
  * @param {object} [opts]
  * @param {Uint8Array | null} [opts.extra=null]
+ * @param {number} [opts.upgradeLength=0] upgrade from 0 to this length and carry the rest as additionalNodes, 0 to upgrade from 0 to the full length
  * @returns {Promise<Uint8Array>}
  */
-async function encryptNotificationProof(core, roomKey, block, index, { extra } = {}) {
-  const proof = await remote.proof(core, { block, index })
+async function encryptNotificationProof(
+  core,
+  roomKey,
+  block,
+  index,
+  { extra, upgradeLength = 0 } = {}
+) {
+  const upgrade = upgradeLength > 0 ? { start: 0, length: upgradeLength } : null
+  const proof = await remote.proof(core, { block, index, upgrade })
   const rawProofPayload = cenc.encode(ProofPayload, { version: VERSION, extra, proof })
   return encrypt(roomKey, rawProofPayload)
 }
@@ -178,5 +199,6 @@ module.exports = {
   encode,
   decode,
   createNotification,
-  readNotification
+  readNotification,
+  LAST_LENGTH_KEY
 }
