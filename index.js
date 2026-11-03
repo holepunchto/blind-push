@@ -65,8 +65,8 @@ async function createNotification(
     raw: true
   })
 
-  // clamp upgrade length to the core length
-  upgradeLength = upgradeLength > core.length ? core.length : upgradeLength
+  // fall back to a full upgrade if the requested length is out of range
+  if (upgradeLength >= core.length) upgradeLength = 0
 
   let payload = await encryptNotificationProof(core, roomKey, block, index, {
     extra,
