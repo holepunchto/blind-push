@@ -42,6 +42,7 @@ const LAST_LENGTH_KEY = 'blind-push/last-length'
  * @param {Uint8Array} [opts.roomKey=core.key]
  * @param {Uint8Array} [opts.roomDiscoveryKey=crypto.discoveryKey(roomKey)]
  * @param {number} [opts.index=core.length - 1]
+ * @param {number} [opts.upgradeLength=core.length]
  * @param {number} [opts.timeout=10000]
  * @param {Uint8Array | null} [opts.extra=null]
  * @returns {Promise<PushPayload>}
@@ -52,6 +53,7 @@ async function createNotification(
     roomKey = core.key,
     roomDiscoveryKey = crypto.discoveryKey(roomKey),
     index = core.length - 1,
+    upgradeLength = core.length,
     timeout = 10_000,
     extra = null
   } = {}
@@ -62,12 +64,6 @@ async function createNotification(
     decrypt: false,
     raw: true
   })
-
-  const length = core.length
-
-  const stored = await core.getUserData(LAST_LENGTH_KEY)
-  let upgradeLength = stored ? cenc.decode(cenc.uint, stored) : 0
-  if (upgradeLength >= length) upgradeLength = 0
 
   let payload = await encryptNotificationProof(core, roomKey, block, index, {
     extra,
@@ -88,8 +84,6 @@ async function createNotification(
       }
     }
   }
-
-  await core.setUserData(LAST_LENGTH_KEY, cenc.encode(cenc.uint, length))
 
   return { discoveryKey: roomDiscoveryKey, payload, version: VERSION }
 }
