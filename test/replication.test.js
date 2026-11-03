@@ -191,14 +191,14 @@ test('push notification from sender to receiver happy path', async function (t) 
 
   {
     const blockIdx = receiver.length - 2
-    const push = await createNotification(blindPeer, { index: blockIdx })
+    const push = await createNotification(blindPeer, { index: blockIdx, upgradeLength: oldLen })
 
     const result = await readNotification(receiver.state.storage.store, receiver.key, push.payload)
     const proof = result.result.proof
     t.is(
       proof.upgrade.length,
       addedBlocks,
-      'upgrade length is the old blindPeer core length from the last push notified block'
+      'upgrade length is the length set during notification creation'
     )
 
     t.is(await receiver.has(blockIdx), false, 'block not there yet')
@@ -222,31 +222,24 @@ test('push notification from sender to receiver sad path', async function (t) {
   // receiver app is asleep
   receiverLink.suspend()
 
-  // First notification dropped
-  await createNotification(blindPeer)
-
   for (let i = 0; i < addedBlocks; i++) await sender.append(block)
   await blindPeer.get(addedBlocks * 2 - 1, { wait: true, timeout: 500 })
 
-  // Second notification dropped
-  await createNotification(blindPeer)
+  // sender uses an incorrect update length
+  const incorrectLength = addedBlocks - 2
+  const push = await createNotification(blindPeer, { upgradeLength: incorrectLength })
 
-  for (let i = 0; i < addedBlocks; i++) await sender.append(block)
-  await blindPeer.get(addedBlocks * 3 - 1, { wait: true, timeout: 500 })
+  // the proof is produced correctly
+  const result = await readNotification(receiver.state.storage.store, receiver.key, push.payload)
+  const proof = result.result.proof
+  t.is(proof.upgrade.length, incorrectLength, 'upgrade length is as expected')
 
-  {
-    const push = await createNotification(blindPeer)
-
-    const result = await readNotification(receiver.state.storage.store, receiver.key, push.payload)
-    const proof = result.result.proof
-    t.is(proof.upgrade.length, addedBlocks * 2, 'upgrade length is as expected')
-
-    t.is(await receiver.has(proof.block.index), false, 'block not there yet')
-    t.is(
-      await receiver.core.verify(proof, null),
-      false,
-      'push notification fails when prior notification was dropped'
-    )
-    t.is(await receiver.has(proof.block.index), false, 'block could not be added by the proof')
-  }
+  // but the push notification fails
+  t.is(await receiver.has(proof.block.index), false, 'block not there yet')
+  t.is(
+    await receiver.core.verify(proof, null),
+    false,
+    'push notification fails when prior notification was dropped'
+  )
+  t.is(await receiver.has(proof.block.index), false, 'block could not be added by the proof')
 })
