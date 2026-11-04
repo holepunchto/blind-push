@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "schema": [
     {
       "name": "blind-peer-request-block",
@@ -70,6 +70,12 @@
           "required": false,
           "type": "buffer",
           "version": 1
+        },
+        {
+          "name": "upgradeLength",
+          "required": false,
+          "type": "uint",
+          "version": 2
         }
       ]
     },

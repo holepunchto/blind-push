@@ -61,6 +61,11 @@ blindPush.register({
       name: 'extra',
       type: 'buffer',
       required: false
+    },
+    {
+      name: 'upgradeLength',
+      type: 'uint',
+      required: false
     }
   ]
 })
