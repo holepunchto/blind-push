@@ -21,8 +21,6 @@ const MAX_PAYLOAD_BYTE_SIZE = Math.floor((MAX_PAYLOAD_BASE64_SIZE * 3) / 4) // r
 
 const VERSION = 3
 
-const LAST_LENGTH_KEY = 'blind-push/last-length'
-
 /**
  * @typedef {object} PushPayload
  * @property {number} version
@@ -42,7 +40,7 @@ const LAST_LENGTH_KEY = 'blind-push/last-length'
  * @param {Uint8Array} [opts.roomKey=core.key]
  * @param {Uint8Array} [opts.roomDiscoveryKey=crypto.discoveryKey(roomKey)]
  * @param {number} [opts.index=core.length - 1]
- * @param {number} [opts.upgradeLength=core.length]
+ * @param {number} [opts.upgradeLength=0]
  * @param {number} [opts.timeout=10000]
  * @param {Uint8Array | null} [opts.extra=null]
  * @returns {Promise<PushPayload>}
@@ -53,7 +51,7 @@ async function createNotification(
     roomKey = core.key,
     roomDiscoveryKey = crypto.discoveryKey(roomKey),
     index = core.length - 1,
-    upgradeLength = core.length,
+    upgradeLength = 0,
     timeout = 10_000,
     extra = null
   } = {}
@@ -196,6 +194,5 @@ module.exports = {
   encode,
   decode,
   createNotification,
-  readNotification,
-  LAST_LENGTH_KEY
+  readNotification
 }
