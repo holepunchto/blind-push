@@ -245,18 +245,13 @@ test('push notification from sender to receiver sad path', async function (t) {
 })
 
 test('createNotification falls back to a full upgrade when the requested length cannot be proven', async function (t) {
-  const { sender, blindPeer, receiver, receiverLink } = await setupE2ENodes(t)
+  const { sender, blindPeer, receiver } = await setupE2ENodes(t)
 
-  for (let i = 0; i < 8; i++) await sender.append(b4a.from('block-' + i))
+  await sender.append(new Array(8).fill(b4a.from('block')))
   await blindPeer.get(7, { wait: true, timeout: 500 })
-  await receiver.get(7, { wait: true, timeout: 500 })
-
-  receiverLink.suspend()
 
   // one append, so the blind peer upgrades from 8 to 16 in one go
-  const batch = []
-  for (let i = 8; i < 16; i++) batch.push(b4a.from('block-' + i))
-  await sender.append(batch)
+  await sender.append(new Array(8).fill(b4a.from('block')))
   await blindPeer.get(15, { wait: true, timeout: 500 })
 
   const push = await createNotification(blindPeer, { index: 15, upgradeLength: 9 })
