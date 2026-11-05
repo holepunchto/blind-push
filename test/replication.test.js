@@ -243,3 +243,23 @@ test('push notification from sender to receiver sad path', async function (t) {
   )
   t.is(await receiver.has(proof.block.index), false, 'block could not be added by the proof')
 })
+
+test('createNotification falls back to a full upgrade when the requested length cannot be proven', async function (t) {
+  const { sender, blindPeer, receiver, receiverLink } = await setupE2ENodes(t)
+
+  for (let i = 0; i < 8; i++) await sender.append(b4a.from('block-' + i))
+  await blindPeer.get(7, { wait: true, timeout: 500 })
+  await receiver.get(7, { wait: true, timeout: 500 })
+
+  receiverLink.suspend()
+
+  // one append, so the blind peer upgrades from 8 to 16 in one go
+  const batch = []
+  for (let i = 8; i < 16; i++) batch.push(b4a.from('block-' + i))
+  await sender.append(batch)
+  await blindPeer.get(15, { wait: true, timeout: 500 })
+
+  const push = await createNotification(blindPeer, { index: 15, upgradeLength: 9 })
+  const result = await readNotification(receiver.state.storage.store, receiver.key, push.payload)
+  t.is(result.result.block.index, 15)
+})
