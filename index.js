@@ -66,10 +66,15 @@ async function createNotification(
   // fall back to a full upgrade if the requested length is out of range
   if (upgradeLength >= core.length) upgradeLength = 0
 
-  let payload = await encryptNotificationProof(core, roomKey, block, index, {
-    extra,
-    upgradeLength
-  })
+  let payload
+  try {
+    payload = await encryptNotificationProof(core, roomKey, block, index, { extra, upgradeLength })
+  } catch (err) {
+    // or if we don't hold the tree at that length, eg after catching up in one upgrade
+    if (upgradeLength === 0) throw err
+    upgradeLength = 0
+    payload = await encryptNotificationProof(core, roomKey, block, index, { extra, upgradeLength })
+  }
 
   // If payload exceeds MAX_PAYLOAD_SIZE, don't send it via Firebase
   // exclude the block and let the client fetch it via hypercore replication
