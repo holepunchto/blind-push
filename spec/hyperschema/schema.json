@@ -1,11 +1,11 @@
 {
-  "version": 2,
+  "version": 3,
   "schema": [
     {
       "name": "blind-peer-request-block",
       "namespace": "blind-push",
       "compact": false,
-      "flagsPosition": -1,
+      "flagsPosition": 2,
       "fields": [
         {
           "name": "key",
@@ -18,6 +18,12 @@
           "required": true,
           "type": "uint",
           "version": 1
+        },
+        {
+          "name": "upgrade",
+          "required": false,
+          "type": "@blind-push/blind-peer-request-upgrade",
+          "version": 3
         }
       ]
     },
@@ -70,12 +76,6 @@
           "required": false,
           "type": "buffer",
           "version": 1
-        },
-        {
-          "name": "upgradeLength",
-          "required": false,
-          "type": "uint",
-          "version": 2
         }
       ]
     },
@@ -142,6 +142,26 @@
           "required": false,
           "type": "string",
           "version": 1
+        }
+      ]
+    },
+    {
+      "name": "blind-peer-request-upgrade",
+      "namespace": "blind-push",
+      "compact": false,
+      "flagsPosition": -1,
+      "fields": [
+        {
+          "name": "start",
+          "required": true,
+          "type": "uint",
+          "version": 3
+        },
+        {
+          "name": "length",
+          "required": true,
+          "type": "uint",
+          "version": 3
         }
       ]
     }
