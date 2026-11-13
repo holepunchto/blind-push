@@ -212,7 +212,15 @@ test('push notification from sender to receiver sad path', async function (t) {
 
   const block = b4a.from('hello world')
   const addedBlocks = 5
-  for (let i = 0; i < addedBlocks; i++) await sender.append(block)
+  // sender uses an incorrect update length
+  const incorrectLength = addedBlocks - 2
+
+  // make the blind peer stop at incorrectLength so it can prove it. If it skips it, the proof
+  // falls back to a full upgrade and this test flakes. That fallback is covered in its own test
+  for (let i = 0; i < incorrectLength; i++) await sender.append(block)
+  while (blindPeer.length < incorrectLength) await blindPeer.update({ wait: true })
+  t.is(blindPeer.length, incorrectLength, 'blind peer upgraded to the incorrect length')
+  for (let i = incorrectLength; i < addedBlocks; i++) await sender.append(block)
 
   await blindPeer.get(addedBlocks - 1, { wait: true, timeout: 500 })
   await receiver.get(addedBlocks - 1, { wait: true, timeout: 500 })
@@ -225,8 +233,6 @@ test('push notification from sender to receiver sad path', async function (t) {
   for (let i = 0; i < addedBlocks; i++) await sender.append(block)
   await blindPeer.get(addedBlocks * 2 - 1, { wait: true, timeout: 500 })
 
-  // sender uses an incorrect update length
-  const incorrectLength = addedBlocks - 2
   const push = await createNotification(blindPeer, { upgradeLength: incorrectLength })
 
   // the proof is produced correctly
