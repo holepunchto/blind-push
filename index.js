@@ -3,6 +3,8 @@ const sodium = require('sodium-native')
 const crypto = require('hypercore-crypto')
 const cenc = require('compact-encoding')
 const remote = require('hypercore/lib/fully-remote-proof')
+const messages = require('hypercore/lib/messages')
+const flat = require('flat-tree')
 
 const schema = require('./spec/hyperschema')
 const BlindPushError = require('./lib/errors')
@@ -44,7 +46,7 @@ const VERSION = 3
  * @param {number} [opts.upgradeLength=0] deprecated, use opts.upgrade
  * @param {number} [opts.timeout=10000]
  * @param {Uint8Array | null} [opts.extra=null]
- * @returns {Promise<PushPayload>}
+ * @returns {Promise<PushPayload & { length: number }>}
  */
 async function createNotification(
   core,
@@ -71,32 +73,38 @@ async function createNotification(
   // fall back to a full upgrade if the requested upgrade is unusable
   if (!isUsableUpgrade(upgrade, core.length)) upgrade = null
 
-  let payload
+  let notification
   try {
-    payload = await encryptNotificationProof(core, roomKey, block, index, { extra, upgrade })
+    notification = await encryptNotificationProof(core, roomKey, block, index, { extra, upgrade })
   } catch (err) {
     // or if we don't hold the tree at that length, eg after catching up in one upgrade
     if (upgrade === null) throw err
     upgrade = null
-    payload = await encryptNotificationProof(core, roomKey, block, index, { extra, upgrade })
+    notification = await encryptNotificationProof(core, roomKey, block, index, { extra, upgrade })
   }
 
   // If payload exceeds MAX_PAYLOAD_SIZE, don't send it via Firebase
   // exclude the block and let the client fetch it via hypercore replication
-  if (payload.byteLength > MAX_PAYLOAD_BYTE_SIZE) {
-    payload = await encryptNotificationProof(core, roomKey, null, 0, { extra, upgrade })
+  if (notification.payload.byteLength > MAX_PAYLOAD_BYTE_SIZE) {
+    notification = await encryptNotificationProof(core, roomKey, null, 0, { extra, upgrade })
 
     // this may occur if the ‘extra’ field is too large
-    if (payload.byteLength > MAX_PAYLOAD_BYTE_SIZE) {
-      payload = await encryptNotificationProof(core, roomKey, null, 0, { upgrade })
+    if (notification.payload.byteLength > MAX_PAYLOAD_BYTE_SIZE) {
+      notification = await encryptNotificationProof(core, roomKey, null, 0, { upgrade })
 
-      if (payload.byteLength > MAX_PAYLOAD_BYTE_SIZE) {
+      if (notification.payload.byteLength > MAX_PAYLOAD_BYTE_SIZE) {
         throw BlindPushError.PAYLOAD_TOO_LARGE()
       }
     }
   }
 
-  return { discoveryKey: roomDiscoveryKey, payload, version: VERSION }
+  // the length the sent proof upgrades the receiver to, taken from that same proof
+  return {
+    discoveryKey: roomDiscoveryKey,
+    payload: notification.payload,
+    version: VERSION,
+    length: notification.length
+  }
 }
 
 /**
@@ -196,7 +204,7 @@ function decrypt(roomKey, encrypted) {
  * @param {object} [opts]
  * @param {Uint8Array | null} [opts.extra=null]
  * @param {{ start: number, length: number } | null} [opts.upgrade=null]
- * @returns {Promise<Uint8Array>}
+ * @returns {Promise<{ payload: Uint8Array, length: number }>}
  */
 async function encryptNotificationProof(
   core,
@@ -207,7 +215,36 @@ async function encryptNotificationProof(
 ) {
   const proof = await remote.proof(core, { block, index, upgrade })
   const rawProofPayload = cenc.encode(ProofPayload, { version: VERSION, extra, proof })
-  return encrypt(roomKey, rawProofPayload)
+  return { payload: encrypt(roomKey, rawProofPayload), length: proofLength(proof) }
+}
+
+/**
+ * Extracts the length a fully remote proof upgrades the receiver to, read from
+ * its nodes.
+ * @param {Uint8Array} proof fully remote proof, as returned by remote.proof
+ * @returns {number}
+ */
+function proofLength(proof) {
+  // skip the discovery key prefix, the rest is a regular wire data message
+  const { upgrade, block } = messages.wire.data.decode({
+    buffer: proof,
+    start: 32,
+    end: proof.byteLength
+  })
+
+  let length = upgrade.start + upgrade.length
+
+  for (const node of upgrade.additionalNodes) {
+    length = Math.max(length, flat.rightSpan(node.index) / 2 + 1)
+  }
+
+  // the root holding the block comes from the block path, not additionalNodes
+  if (block) {
+    length = Math.max(length, block.index + 1)
+    for (const node of block.nodes) length = Math.max(length, flat.rightSpan(node.index) / 2 + 1)
+  }
+
+  return length
 }
 
 module.exports = {
