@@ -344,12 +344,13 @@ test('deprecated upgradeLength push notification from sender to receiver sad pat
   // receiver goes offline
   receiverLink.suspend()
 
-  // sender adds new blocks and the peer receives them
+  // blind peer receives new blocks sender
   for (let i = 0; i < addedBlocks; i++) await sender.append(block)
   await blindPeer.get(addedBlocks * 2 - 1, { wait: true, timeout: 500 })
 
-  // the blind peer creates a push notification with the incorrect length
+  // blind peer creates a push notification with the incorrect length
   const push = await createNotification(blindPeer, { upgradeLength: incorrectLength })
+  t.is(push.length, addedBlocks * 2, 'push notification length is correct')
 
   // the proof is produced correctly
   const result = await readNotification(receiver.state.storage.store, receiver.key, push.payload)

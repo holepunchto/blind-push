@@ -13,6 +13,7 @@ test('createNotification/readNotification happy path', async function (t) {
   const extra = b4a.from('metadata')
   const push = await createNotification(core, { extra })
   t.is(push.version, 3, 'createNotification returns the outer payload version')
+  t.is(push.length, 1, 'createNotification produces the correct push notification length')
   t.alike(push.discoveryKey, core.discoveryKey, 'createNotification returns the room discovery key')
 
   const result = await readNotification(core.state.storage.store, core.key, push.payload)
@@ -42,6 +43,7 @@ test('createNotification omits block data for oversized payloads', async functio
 
   const push = await createNotification(core)
   t.is(push.version, 3, 'createNotification returns the outer payload version')
+  t.is(push.length, 1, 'createNotification produces the correct push notification length')
   t.alike(push.discoveryKey, core.discoveryKey, 'createNotification returns the room discovery key')
 
   const result = await readNotification(core.state.storage.store, core.key, push.payload)
@@ -76,9 +78,11 @@ test('createNotification drops oversized extra from the compact payload', async 
     null,
     'readNotification omits block data when compacting the payload'
   )
+  t.is(fits.length, 1, 'createNotification produces the correct push notification length')
 
   const push = await createNotification(core, { extra: b4a.alloc(1_300, 'b') })
   t.alike(push.discoveryKey, core.discoveryKey, 'createNotification returns the room discovery key')
+  t.is(push.length, 1, 'createNotification produces the correct push notification length')
 
   const result = await readNotification(core.state.storage.store, core.key, push.payload)
   t.ok(result, 'readNotification verifies the compact push proof')
@@ -139,6 +143,7 @@ test('upgrade lengths larger than the core are clamped', async function (t) {
   for (let i = 0; i < 10; i++) {
     await core.append(block)
     const push = await createNotification(core, { extra, upgrade: { start: 0, length: 5 } })
+    t.is(push.length, i + 1, 'push notification length is correct')
 
     const result = await readNotification(core.state.storage.store, core.key, push.payload)
     const proof = result.result.proof
@@ -161,10 +166,13 @@ test('upgrade lengths larger than the core are clamped', async function (t) {
 test('upgrades not starting at 0 fall back to a full upgrade', async function (t) {
   const core = await createCore(t)
 
-  for (let i = 0; i < 10; i++) await core.append(b4a.from('hello world'))
+  const added = 10
+  for (let i = 0; i < added; i++) await core.append(b4a.from('hello world'))
 
   const upgrade = { start: 3, length: 5 }
   const push = await createNotification(core, { upgrade })
+
+  t.is(push.length, added, 'push notification length is correct')
 
   const result = await readNotification(core.state.storage.store, core.key, push.payload)
   t.comment(`core length: ${core.length}, requested upgrade: ${JSON.stringify(upgrade)}`)
