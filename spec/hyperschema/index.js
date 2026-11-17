@@ -77,10 +77,13 @@ const encoding2 = {
 
     if (m.appId) c.string.preencode(state, m.appId)
     if (m.extra) c.buffer.preencode(state, m.extra)
-    if (version >= 2 && m.upgradeLength) c.uint.preencode(state, m.upgradeLength)
+    if (version >= 2 && m.deprecatedUpgradeLength) {
+      c.uint.preencode(state, m.deprecatedUpgradeLength)
+    }
   },
   encode(state, m) {
-    const flags = (m.appId ? 1 : 0) | (m.extra ? 2 : 0) | (version >= 2 && m.upgradeLength ? 4 : 0)
+    const flags =
+      (m.appId ? 1 : 0) | (m.extra ? 2 : 0) | (version >= 2 && m.deprecatedUpgradeLength ? 4 : 0)
 
     encoding2_0.encode(state, m.block)
     encoding2_1.encode(state, m.destination)
@@ -88,7 +91,7 @@ const encoding2 = {
 
     if (m.appId) c.string.encode(state, m.appId)
     if (m.extra) c.buffer.encode(state, m.extra)
-    if (version >= 2 && m.upgradeLength) c.uint.encode(state, m.upgradeLength)
+    if (version >= 2 && m.deprecatedUpgradeLength) c.uint.encode(state, m.deprecatedUpgradeLength)
   },
   decode(state) {
     const r0 = encoding2_0.decode(state)
@@ -100,7 +103,7 @@ const encoding2 = {
       destination: r1,
       appId: (flags & 1) !== 0 ? c.string.decode(state) : null,
       extra: (flags & 2) !== 0 ? c.buffer.decode(state) : null,
-      upgradeLength: version >= 2 && (flags & 4) !== 0 ? c.uint.decode(state) : 0
+      deprecatedUpgradeLength: version >= 2 && (flags & 4) !== 0 ? c.uint.decode(state) : 0
     }
   }
 }
