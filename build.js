@@ -85,7 +85,7 @@ blindPush.register({
       required: false
     },
     {
-      name: 'deprecatedUpgradeLength',
+      name: 'upgradeLength', // this field is deprecated
       type: 'uint',
       required: false
     }

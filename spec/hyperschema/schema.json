@@ -78,7 +78,7 @@
           "version": 1
         },
         {
-          "name": "deprecatedUpgradeLength",
+          "name": "upgradeLength",
           "required": false,
           "type": "uint",
           "version": 2
