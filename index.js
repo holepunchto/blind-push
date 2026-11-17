@@ -41,6 +41,7 @@ const VERSION = 3
  * @param {Uint8Array} [opts.roomDiscoveryKey=crypto.discoveryKey(roomKey)]
  * @param {number} [opts.index=core.length - 1]
  * @param {{ start: number, length: number } | null} [opts.upgrade=null]
+ * @param {number} [opts.upgradeLength=0] deprecated, use opts.upgrade
  * @param {number} [opts.timeout=10000]
  * @param {Uint8Array | null} [opts.extra=null]
  * @returns {Promise<PushPayload>}
@@ -52,6 +53,7 @@ async function createNotification(
     roomDiscoveryKey = crypto.discoveryKey(roomKey),
     index = core.length - 1,
     upgrade = null,
+    upgradeLength = 0,
     timeout = 10_000,
     extra = null
   } = {}
@@ -62,6 +64,9 @@ async function createNotification(
     decrypt: false,
     raw: true
   })
+
+  // attempt to use old API if upgrade is null
+  if (upgrade === null && upgradeLength > 0) upgrade = { start: 0, length: upgradeLength }
 
   // fall back to a full upgrade if the requested upgrade is unusable
   if (!isUsableUpgrade(upgrade, core.length)) upgrade = null
