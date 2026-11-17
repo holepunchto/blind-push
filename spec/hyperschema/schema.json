@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 4,
   "schema": [
     {
       "name": "blind-peer-request-block",
@@ -168,6 +168,20 @@
           "required": true,
           "type": "uint",
           "version": 3
+        }
+      ]
+    },
+    {
+      "name": "blind-peer-response",
+      "namespace": "blind-push",
+      "compact": false,
+      "flagsPosition": -1,
+      "fields": [
+        {
+          "name": "length",
+          "required": true,
+          "type": "uint",
+          "version": 4
         }
       ]
     }
