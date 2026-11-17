@@ -191,7 +191,10 @@ test('push notification from sender to receiver happy path', async function (t) 
 
   {
     const blockIdx = receiver.length - 2
-    const push = await createNotification(blindPeer, { index: blockIdx, upgradeLength: oldLen })
+    const push = await createNotification(blindPeer, {
+      index: blockIdx,
+      upgrade: { start: 0, length: oldLen }
+    })
 
     const result = await readNotification(receiver.state.storage.store, receiver.key, push.payload)
     const proof = result.result.proof
@@ -233,7 +236,9 @@ test('push notification from sender to receiver sad path', async function (t) {
   for (let i = 0; i < addedBlocks; i++) await sender.append(block)
   await blindPeer.get(addedBlocks * 2 - 1, { wait: true, timeout: 500 })
 
-  const push = await createNotification(blindPeer, { upgradeLength: incorrectLength })
+  const push = await createNotification(blindPeer, {
+    upgrade: { start: 0, length: incorrectLength }
+  })
 
   // the proof is produced correctly
   const result = await readNotification(receiver.state.storage.store, receiver.key, push.payload)
@@ -261,7 +266,7 @@ test('createNotification falls back to a full upgrade when the requested length 
   await blindPeer.get(15, { wait: true, timeout: 500 })
   t.absent(await blindPeer.has(8), 'blind peer skipped the blocks in between')
 
-  const push = await createNotification(blindPeer, { index: 15, upgradeLength: 9 })
+  const push = await createNotification(blindPeer, { index: 15, upgrade: { start: 0, length: 9 } })
   const result = await readNotification(receiver.state.storage.store, receiver.key, push.payload)
   t.is(result.result.block.index, 15)
   t.is(result.result.proof.upgrade.length, blindPeer.length, 'fell back to a full upgrade')

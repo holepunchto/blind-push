@@ -138,7 +138,7 @@ test('upgrade lengths larger than the core are clamped', async function (t) {
 
   for (let i = 0; i < 10; i++) {
     await core.append(block)
-    const push = await createNotification(core, { extra, upgradeLength: 5 })
+    const push = await createNotification(core, { extra, upgrade: { start: 0, length: 5 } })
 
     const result = await readNotification(core.state.storage.store, core.key, push.payload)
     const proof = result.result.proof
@@ -156,4 +156,22 @@ test('upgrade lengths larger than the core are clamped', async function (t) {
       'upgrade length remains as chosen when core length is above provided value'
     )
   }
+})
+
+test('upgrades not starting at 0 fall back to a full upgrade', async function (t) {
+  const core = await createCore(t)
+
+  for (let i = 0; i < 10; i++) await core.append(b4a.from('hello world'))
+
+  const upgrade = { start: 3, length: 5 }
+  const push = await createNotification(core, { upgrade })
+
+  const result = await readNotification(core.state.storage.store, core.key, push.payload)
+  t.comment(`core length: ${core.length}, requested upgrade: ${JSON.stringify(upgrade)}`)
+  t.ok(result, 'readNotification verifies the push proof')
+
+  const proof = result.result.proof
+  t.comment(`proof upgrade: start ${proof.upgrade.start}, length ${proof.upgrade.length}`)
+  t.is(proof.upgrade.start, 0, 'upgrade starts at 0')
+  t.is(proof.upgrade.length, core.length, 'fell back to a full upgrade')
 })
