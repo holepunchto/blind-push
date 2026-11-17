@@ -8,6 +8,23 @@ const schema = Hyperschema.from(SCHEMA_DIR, { versioned: true })
 const blindPush = schema.namespace('blind-push')
 
 blindPush.register({
+  name: 'blind-peer-request-upgrade',
+  compact: true,
+  fields: [
+    {
+      name: 'start',
+      type: 'uint',
+      required: true
+    },
+    {
+      name: 'length',
+      type: 'uint',
+      required: true
+    }
+  ]
+})
+
+blindPush.register({
   name: 'blind-peer-request-block',
   fields: [
     {
@@ -19,6 +36,11 @@ blindPush.register({
       name: 'index',
       type: 'uint',
       required: true
+    },
+    {
+      name: 'upgrade',
+      type: '@blind-push/blind-peer-request-upgrade',
+      required: false
     }
   ]
 })
@@ -63,7 +85,7 @@ blindPush.register({
       required: false
     },
     {
-      name: 'upgradeLength',
+      name: 'upgradeLength', // this field is deprecated
       type: 'uint',
       required: false
     }

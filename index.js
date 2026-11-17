@@ -40,7 +40,8 @@ const VERSION = 3
  * @param {Uint8Array} [opts.roomKey=core.key]
  * @param {Uint8Array} [opts.roomDiscoveryKey=crypto.discoveryKey(roomKey)]
  * @param {number} [opts.index=core.length - 1]
- * @param {number} [opts.upgradeLength=0]
+ * @param {{ start: number, length: number } | null} [opts.upgrade=null]
+ * @param {number} [opts.upgradeLength=0] deprecated, use opts.upgrade
  * @param {number} [opts.timeout=10000]
  * @param {Uint8Array | null} [opts.extra=null]
  * @returns {Promise<PushPayload>}
@@ -51,6 +52,7 @@ async function createNotification(
     roomKey = core.key,
     roomDiscoveryKey = crypto.discoveryKey(roomKey),
     index = core.length - 1,
+    upgrade = null,
     upgradeLength = 0,
     timeout = 10_000,
     extra = null
@@ -63,27 +65,30 @@ async function createNotification(
     raw: true
   })
 
-  // fall back to a full upgrade if the requested length is out of range
-  if (upgradeLength >= core.length) upgradeLength = 0
+  // attempt to use old API if upgrade is null
+  if (upgrade === null && upgradeLength > 0) upgrade = { start: 0, length: upgradeLength }
+
+  // fall back to a full upgrade if the requested upgrade is unusable
+  if (!isUsableUpgrade(upgrade, core.length)) upgrade = null
 
   let payload
   try {
-    payload = await encryptNotificationProof(core, roomKey, block, index, { extra, upgradeLength })
+    payload = await encryptNotificationProof(core, roomKey, block, index, { extra, upgrade })
   } catch (err) {
     // or if we don't hold the tree at that length, eg after catching up in one upgrade
-    if (upgradeLength === 0) throw err
-    upgradeLength = 0
-    payload = await encryptNotificationProof(core, roomKey, block, index, { extra, upgradeLength })
+    if (upgrade === null) throw err
+    upgrade = null
+    payload = await encryptNotificationProof(core, roomKey, block, index, { extra, upgrade })
   }
 
   // If payload exceeds MAX_PAYLOAD_SIZE, don't send it via Firebase
   // exclude the block and let the client fetch it via hypercore replication
   if (payload.byteLength > MAX_PAYLOAD_BYTE_SIZE) {
-    payload = await encryptNotificationProof(core, roomKey, null, 0, { extra, upgradeLength })
+    payload = await encryptNotificationProof(core, roomKey, null, 0, { extra, upgrade })
 
     // this may occur if the ‘extra’ field is too large
     if (payload.byteLength > MAX_PAYLOAD_BYTE_SIZE) {
-      payload = await encryptNotificationProof(core, roomKey, null, 0, { upgradeLength })
+      payload = await encryptNotificationProof(core, roomKey, null, 0, { upgrade })
 
       if (payload.byteLength > MAX_PAYLOAD_BYTE_SIZE) {
         throw BlindPushError.PAYLOAD_TOO_LARGE()
@@ -92,6 +97,17 @@ async function createNotification(
   }
 
   return { discoveryKey: roomDiscoveryKey, payload, version: VERSION }
+}
+
+/**
+ * @param {{ start: number, length: number } | null} upgrade
+ * @param {number} coreLength
+ * @returns {boolean}
+ */
+function isUsableUpgrade(upgrade, coreLength) {
+  if (upgrade === null) return false
+  if (upgrade.start !== 0) return false
+  return upgrade.length > 0 && upgrade.length < coreLength
 }
 
 /**
@@ -179,7 +195,7 @@ function decrypt(roomKey, encrypted) {
  * @param {number} index
  * @param {object} [opts]
  * @param {Uint8Array | null} [opts.extra=null]
- * @param {number} [opts.upgradeLength=0] upgrade from 0 to this length and carry the rest as additionalNodes, 0 to upgrade from 0 to the full length
+ * @param {{ start: number, length: number } | null} [opts.upgrade=null]
  * @returns {Promise<Uint8Array>}
  */
 async function encryptNotificationProof(
@@ -187,9 +203,8 @@ async function encryptNotificationProof(
   roomKey,
   block,
   index,
-  { extra, upgradeLength = 0 } = {}
+  { extra, upgrade = null } = {}
 ) {
-  const upgrade = upgradeLength > 0 ? { start: 0, length: upgradeLength } : null
   const proof = await remote.proof(core, { block, index, upgrade })
   const rawProofPayload = cenc.encode(ProofPayload, { version: VERSION, extra, proof })
   return encrypt(roomKey, rawProofPayload)
