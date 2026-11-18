@@ -149,6 +149,7 @@ test('upgrade lengths larger than the core are clamped', async function (t) {
     const proof = result.result.proof
 
     t.is(proof.block.index, i, 'block index is correct')
+    t.is(result.result.length, core.length, 'proof still upgrades to the full length')
 
     if (i < 5) {
       t.is(proof.upgrade.length, i + 1, 'upgrade length is upper clamped to the length of the core')
@@ -184,35 +185,16 @@ test('upgrades not starting at 0 fall back to a full upgrade', async function (t
   t.is(proof.upgrade.length, core.length, 'fell back to a full upgrade')
 })
 
-test('deprecated upgradeLength is used when no upgrade is given', async function (t) {
+test('upgrade lengths larger than the core fall back to a full upgrade', async function (t) {
   const core = await createCore(t)
 
   for (let i = 0; i < 10; i++) await core.append(b4a.from('hello world'))
 
-  const upgradeLength = 5
-  const push = await createNotification(core, { upgradeLength })
+  const upgrade = { start: 0, length: 20 }
+  const push = await createNotification(core, { upgrade })
 
   const result = await readNotification(core.state.storage.store, core.key, push.payload)
-  t.comment(`core length: ${core.length}, requested upgradeLength: ${upgradeLength}`)
-  t.ok(result, 'readNotification verifies the push proof')
-
-  const proof = result.result.proof
-  t.comment(`proof upgrade: start ${proof.upgrade.start}, length ${proof.upgrade.length}`)
-  t.is(proof.upgrade.start, 0, 'upgrade starts at 0')
-  t.is(proof.upgrade.length, upgradeLength, 'upgrade is split at the deprecated upgradeLength')
-  t.is(result.result.length, core.length, 'proof still upgrades to the full length')
-})
-
-test('deprecated upgradeLength out of range falls back to a full upgrade', async function (t) {
-  const core = await createCore(t)
-
-  for (let i = 0; i < 10; i++) await core.append(b4a.from('hello world'))
-
-  const upgradeLength = 20
-  const push = await createNotification(core, { upgradeLength })
-
-  const result = await readNotification(core.state.storage.store, core.key, push.payload)
-  t.comment(`core length: ${core.length}, requested upgradeLength: ${upgradeLength}`)
+  t.comment(`core length: ${core.length}, requested upgrade: ${JSON.stringify(upgrade)}`)
   t.ok(result, 'readNotification verifies the push proof')
 
   const proof = result.result.proof
@@ -221,15 +203,15 @@ test('deprecated upgradeLength out of range falls back to a full upgrade', async
   t.is(proof.upgrade.length, core.length, 'fell back to a full upgrade')
 })
 
-test('no upgrade and no deprecated upgradeLength gives a full upgrade', async function (t) {
+test('no upgrade gives a full upgrade', async function (t) {
   const core = await createCore(t)
 
   for (let i = 0; i < 10; i++) await core.append(b4a.from('hello world'))
 
-  // omitted entirely, and what blind-peer passes for a client that sent neither field
+  // omitted entirely, and what blind-peer passes for a client that sent no upgrade
   const cases = [
     { name: 'options omitted', opts: {} },
-    { name: 'decoded defaults', opts: { upgrade: null, upgradeLength: 0 } }
+    { name: 'decoded defaults', opts: { upgrade: null } }
   ]
 
   for (const { name, opts } of cases) {
@@ -247,40 +229,5 @@ test('no upgrade and no deprecated upgradeLength gives a full upgrade', async fu
     t.is(proof.upgrade.start, 0, `${name}: upgrade starts at 0`)
     t.is(proof.upgrade.length, core.length, `${name}: full upgrade to the core length`)
     t.is(proof.upgrade.additionalNodes.length, 0, `${name}: nothing left over for additionalNodes`)
-  }
-})
-
-test('upgrade always wins over the deprecated upgradeLength', async function (t) {
-  const core = await createCore(t)
-
-  for (let i = 0; i < 10; i++) await core.append(b4a.from('hello world'))
-
-  const cases = [
-    {
-      name: 'both usable',
-      opts: { upgrade: { start: 0, length: 3 }, upgradeLength: 6 },
-      expected: 3
-    },
-    {
-      // an unusable upgrade does not fall through to upgradeLength, it falls back to full
-      name: 'upgrade unusable',
-      opts: { upgrade: { start: 3, length: 5 }, upgradeLength: 6 },
-      expected: 10
-    }
-  ]
-
-  for (const { name, opts, expected } of cases) {
-    const push = await createNotification(core, opts)
-
-    const result = await readNotification(core.state.storage.store, core.key, push.payload)
-    t.comment(`${name}: core length: ${core.length}, opts: ${JSON.stringify(opts)}`)
-    t.ok(result, `${name}: readNotification verifies the push proof`)
-
-    const proof = result.result.proof
-    t.comment(
-      `${name}: proof upgrade: start ${proof.upgrade.start}, length ${proof.upgrade.length}`
-    )
-    t.is(proof.upgrade.start, 0, `${name}: upgrade starts at 0`)
-    t.is(proof.upgrade.length, expected, `${name}: upgradeLength was ignored`)
   }
 })
