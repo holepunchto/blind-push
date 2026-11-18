@@ -164,7 +164,7 @@ test('upgrade lengths larger than the core are clamped', async function (t) {
   }
 })
 
-test('upgrades not starting at 0 fall back to a full upgrade', async function (t) {
+test('upgrades with nonzero starts produce notifications that fail fully remote verification', async function (t) {
   const core = await createCore(t)
 
   const added = 10
@@ -174,18 +174,16 @@ test('upgrades not starting at 0 fall back to a full upgrade', async function (t
   const push = await createNotification(core, { upgrade })
 
   t.is(push.length, added, 'push notification length is correct')
+  t.ok(push.payload.byteLength > 0, 'notification contains an encrypted proof')
 
-  const result = await readNotification(core.state.storage.store, core.key, push.payload)
-  t.comment(`core length: ${core.length}, requested upgrade: ${JSON.stringify(upgrade)}`)
-  t.ok(result, 'readNotification verifies the push proof')
-
-  const proof = result.result.proof
-  t.comment(`proof upgrade: start ${proof.upgrade.start}, length ${proof.upgrade.length}`)
-  t.is(proof.upgrade.start, 0, 'upgrade starts at 0')
-  t.is(proof.upgrade.length, core.length, 'fell back to a full upgrade')
+  await t.exception(
+    readNotification(core.state.storage.store, core.key, push.payload),
+    /INVALID_OPERATION: Expected node/,
+    'fully remote verification rejects the nonzero-start proof'
+  )
 })
 
-test('upgrade lengths larger than the core fall back to a full upgrade', async function (t) {
+test('upgrade.start + upgrade.length that sum to larger than the core fall back to a full upgrade', async function (t) {
   const core = await createCore(t)
 
   for (let i = 0; i < 10; i++) await core.append(b4a.from('hello world'))

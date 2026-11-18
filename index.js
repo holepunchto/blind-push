@@ -108,8 +108,8 @@ async function createNotification(
  */
 function isUsableUpgrade(upgrade, coreLength) {
   if (upgrade === null) return false
-  if (upgrade.start !== 0) return false
-  return upgrade.length > 0 && upgrade.length < coreLength
+  const end = upgrade.start + upgrade.length
+  return upgrade.start >= 0 && upgrade.length > 0 && end <= coreLength
 }
 
 /**
