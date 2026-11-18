@@ -3,7 +3,6 @@ const sodium = require('sodium-native')
 const crypto = require('hypercore-crypto')
 const cenc = require('compact-encoding')
 const remote = require('hypercore/lib/fully-remote-proof')
-const messages = require('hypercore/lib/messages')
 const flat = require('flat-tree')
 
 const schema = require('./spec/hyperschema')
@@ -213,9 +212,10 @@ async function encryptNotificationProof(
   index,
   { extra, upgrade = null } = {}
 ) {
-  const proof = await remote.proof(core, { block, index, upgrade })
+  const result = await remote.proof(core, { block, index, upgrade, encode: false })
+  const proof = remote.encode(result)
   const rawProofPayload = cenc.encode(ProofPayload, { version: VERSION, extra, proof })
-  return { payload: encrypt(roomKey, rawProofPayload), length: proofLength(proof) }
+  return { payload: encrypt(roomKey, rawProofPayload), length: proofLength(result.proof) }
 }
 
 /**
@@ -225,12 +225,7 @@ async function encryptNotificationProof(
  * @returns {number}
  */
 function proofLength(proof) {
-  // skip the discovery key prefix, the rest is a regular wire data message
-  const { upgrade, block } = messages.wire.data.decode({
-    buffer: proof,
-    start: 32,
-    end: proof.byteLength
-  })
+  const { upgrade, block } = proof
 
   let length = upgrade.start + upgrade.length
 
