@@ -40,6 +40,64 @@ test('createNotification/readNotification replication happy path', async functio
   t.alike(result.result.block.value, block, 'readNotification returns the appended block value')
 })
 
+test('returned push length can be used for the next notification', async function (t) {
+  const { sender, blindPeer, receiver, receiverLink } = await setupE2ENodes(t)
+
+  // an inital message is sent by sender
+  const block = b4a.from('hello world')
+  await sender.append(block)
+  await blindPeer.get(0, { wait: true, timeout: 500 })
+  await receiver.get(0, { wait: true, timeout: 500 })
+
+  // receiver disconnects
+  receiverLink.suspend()
+
+  // sender sends more messages
+  for (let i = 0; i < 4; i++) await sender.append(block)
+  await blindPeer.get(4, { wait: true, timeout: 500 })
+
+  // blind peer creates push notification for next 4 messages
+  const firstPush = await createNotification(blindPeer, { upgrade: { start: 0, length: 1 } })
+  const firstResult = await readNotification(
+    receiver.state.storage.store,
+    receiver.key,
+    firstPush.payload
+  )
+  t.ok(firstResult, 'first notification verifies on the receiver')
+  t.is(firstPush.length, 5, 'first notification returns the core length')
+  t.is(blindPeer.length, firstPush.length, 'first notification length matches blindPeer length')
+
+  const firstProof = firstResult.result.proof
+
+  // receiver can correctly apply proof
+  t.is(await receiver.has(4), false, 'receiver does not have the latest block')
+  t.ok(await receiver.core.verify(firstProof, null), 'first proof is applied')
+  t.ok(await receiver.has(4), 'new block arrived via the proof')
+
+  // sender sends more messages
+  for (let i = 0; i < 3; i++) await sender.append(block)
+  await blindPeer.get(7, { wait: true, timeout: 500 })
+
+  // blind peer creates push notification with prior push length
+  const secondPush = await createNotification(blindPeer, {
+    upgrade: { start: 0, length: firstPush.length }
+  })
+  const secondResult = await readNotification(
+    receiver.state.storage.store,
+    receiver.key,
+    secondPush.payload
+  )
+  const secondProof = secondResult.result.proof
+
+  // receiver can correctly apply proof
+  t.is(secondProof.upgrade.length, firstPush.length, 'upgrade is split at the returned length')
+  t.is(secondPush.length, 8, 'second notification returns the new core length')
+  t.is(await receiver.has(7), false, 'receiver does not have the new block')
+  t.ok(await receiver.core.verify(secondProof, null), 'second proof is applied')
+  t.ok(await receiver.has(7), 'new block arrived via the proof')
+  t.is(receiver.length, secondPush.length, 'receiver reaches the second notification length')
+})
+
 test('createNotification times out when the replication link is suspended', async function (t) {
   const { sender, blindPeer, senderLink } = await setupE2ENodes(t)
 
