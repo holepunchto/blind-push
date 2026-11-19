@@ -201,6 +201,73 @@ test('upgrade.start + upgrade.length that sum to larger than the core fall back 
   t.is(proof.upgrade.length, core.length, 'fell back to a full upgrade')
 })
 
+test('a nonzero upgrade start that puts the end beyond the core falls back to a full upgrade', async function (t) {
+  const core = await createCore(t)
+  for (let i = 0; i < 10; i++) await core.append(b4a.from('hello world'))
+
+  const push = await createNotification(core, { upgrade: { start: 7, length: 4 } })
+  const result = await readNotification(core.state.storage.store, core.key, push.payload)
+
+  t.ok(result, 'fallback proof verifies')
+  t.is(push.length, 10, 'notification returns the core length')
+  t.is(result.result.proof.upgrade.start, 0, 'fallback upgrade starts at zero')
+  t.is(result.result.proof.upgrade.length, 10, 'fallback covers the full core')
+})
+
+test('a negative upgrade start falls back to a full upgrade', async function (t) {
+  const core = await createCore(t)
+  for (let i = 0; i < 10; i++) await core.append(b4a.from('hello world'))
+
+  const push = await createNotification(core, { upgrade: { start: -1, length: 5 } })
+  const result = await readNotification(core.state.storage.store, core.key, push.payload)
+
+  t.ok(result, 'fallback proof verifies')
+  t.is(push.length, 10, 'notification returns the core length')
+  t.is(result.result.proof.upgrade.start, 0, 'fallback upgrade starts at zero')
+  t.is(result.result.proof.upgrade.length, 10, 'fallback covers the full core')
+})
+
+test('a zero upgrade length with a nonzero start falls back to a full upgrade', async function (t) {
+  const core = await createCore(t)
+  for (let i = 0; i < 10; i++) await core.append(b4a.from('hello world'))
+
+  const push = await createNotification(core, { upgrade: { start: 5, length: 0 } })
+  const result = await readNotification(core.state.storage.store, core.key, push.payload)
+
+  t.ok(result, 'fallback proof verifies')
+  t.is(push.length, 10, 'notification returns the core length')
+  t.is(result.result.proof.upgrade.start, 0, 'fallback upgrade starts at zero')
+  t.is(result.result.proof.upgrade.length, 10, 'fallback covers the full core')
+})
+
+test('a zero upgrade start and length fall back to a full upgrade', async function (t) {
+  const core = await createCore(t)
+  for (let i = 0; i < 10; i++) await core.append(b4a.from('hello world'))
+
+  const push = await createNotification(core, { upgrade: { start: 0, length: 0 } })
+  const result = await readNotification(core.state.storage.store, core.key, push.payload)
+
+  t.ok(result, 'fallback proof verifies')
+  t.is(push.length, 10, 'notification returns the core length')
+  t.is(result.result.proof.upgrade.start, 0, 'fallback upgrade starts at zero')
+  t.is(result.result.proof.upgrade.length, 10, 'fallback covers the full core')
+})
+
+test('a nonzero-start upgrade ending at the core length is accepted', async function (t) {
+  const core = await createCore(t)
+  for (let i = 0; i < 10; i++) await core.append(b4a.from('hello world'))
+
+  const push = await createNotification(core, { upgrade: { start: 5, length: 5 } })
+
+  t.is(push.length, 10, 'notification returns the core length')
+  t.ok(push.payload.byteLength > 0, 'notification contains an encrypted proof')
+  await t.exception(
+    readNotification(core.state.storage.store, core.key, push.payload),
+    /INVALID_OPERATION: Expected node/,
+    'fully remote verification rejects the nonzero-start proof'
+  )
+})
+
 test('no upgrade gives a full upgrade', async function (t) {
   const core = await createCore(t)
 

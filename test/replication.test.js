@@ -153,6 +153,65 @@ test('createNotification resolves after sender replication resumes before timeou
   )
 })
 
+test('createNotification fetches a missing upgrade start boundary after replication resumes', async function (t) {
+  const { sender, blindPeer, senderLink, receiverLink } = await setupE2ENodes(t)
+
+  await receiverLink.suspend()
+  await sender.append(new Array(10).fill(b4a.from('block')))
+  await blindPeer.get(9, { wait: true, timeout: 500 })
+  await blindPeer.get(7, { wait: true, timeout: 500 })
+  t.absent(await blindPeer.has(4), 'upgrade start boundary is missing')
+  await senderLink.suspend()
+
+  let status = 'pending'
+  const sentPromise = createNotification(blindPeer, {
+    index: 9,
+    upgrade: { start: 5, length: 3 },
+    timeout: 1000
+  }).then(
+    (push) => {
+      status = 'resolved'
+      return push
+    },
+    (err) => {
+      status = 'rejected'
+      throw err
+    }
+  )
+
+  await new Promise((resolve) => setTimeout(resolve, 100))
+  t.is(status, 'pending', 'notification waits for the missing start boundary')
+  t.absent(await blindPeer.has(4), 'start boundary is still missing while replication is suspended')
+
+  await senderLink.resume()
+  const push = await sentPromise
+
+  t.ok(await blindPeer.has(4), 'upgrade start boundary was downloaded')
+  t.is(push.length, 10, 'notification returns the core length')
+})
+
+test('createNotification times out when an upgrade boundary stays unavailable', async function (t) {
+  const { sender, blindPeer, senderLink, receiverLink } = await setupE2ENodes(t)
+
+  await receiverLink.suspend()
+  await sender.append(new Array(10).fill(b4a.from('block')))
+  await blindPeer.get(9, { wait: true, timeout: 500 })
+  await blindPeer.get(7, { wait: true, timeout: 500 })
+  t.absent(await blindPeer.has(4), 'upgrade start boundary is missing')
+  await senderLink.suspend()
+
+  await t.exception(
+    createNotification(blindPeer, {
+      index: 9,
+      upgrade: { start: 5, length: 3 },
+      timeout: 500
+    }),
+    /REQUEST_TIMEOUT/,
+    'notification times out while the target and end boundary blocks are available'
+  )
+  t.absent(await blindPeer.has(4), 'upgrade start boundary remains missing')
+})
+
 test('readNotification reports newer data while receiver replication is suspended', async function (t) {
   const { sender, blindPeer, receiver, receiverLink } = await setupE2ENodes(t)
 
@@ -311,21 +370,4 @@ test('push notification from sender to receiver sad path', async function (t) {
     'push notification fails when prior notification was dropped'
   )
   t.is(await receiver.has(proof.block.index), false, 'block could not be added by the proof')
-})
-
-test('createNotification falls back to a full upgrade when the requested length cannot be proven', async function (t) {
-  const { sender, blindPeer, receiver } = await setupE2ENodes(t)
-
-  await sender.append(new Array(8).fill(b4a.from('block')))
-  await blindPeer.get(7, { wait: true, timeout: 500 })
-
-  // one append, so the blind peer upgrades from 8 to 16 in one go
-  await sender.append(new Array(8).fill(b4a.from('block')))
-  await blindPeer.get(15, { wait: true, timeout: 500 })
-  t.absent(await blindPeer.has(8), 'blind peer skipped the blocks in between')
-
-  const push = await createNotification(blindPeer, { index: 15, upgrade: { start: 0, length: 9 } })
-  const result = await readNotification(receiver.state.storage.store, receiver.key, push.payload)
-  t.is(result.result.block.index, 15)
-  t.is(result.result.proof.upgrade.length, blindPeer.length, 'fell back to a full upgrade')
 })
