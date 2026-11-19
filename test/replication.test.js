@@ -98,6 +98,33 @@ test('returned push length can be used for the next notification', async functio
   t.is(receiver.length, secondPush.length, 'receiver reaches the second notification length')
 })
 
+test('createNotification preserves the requested upgrade while the blind peer catches up', async function (t) {
+  const { sender, blindPeer, senderLink } = await setupE2ENodes(t)
+
+  await senderLink.suspend()
+  await sender.append(b4a.from('first'))
+  await sender.append(b4a.from('second'))
+
+  t.is(blindPeer.length, 0, 'blind peer has not replicated the core yet')
+
+  const upgrade = { start: 0, length: 1 }
+  const sentPromise = createNotification(blindPeer, {
+    index: 1,
+    upgrade,
+    timeout: 1000
+  })
+
+  await senderLink.resume()
+  const push = await sentPromise
+  const result = await readNotification(sender.state.storage.store, sender.key, push.payload)
+
+  t.ok(result, 'notification proof verifies')
+  t.is(blindPeer.length, 2, 'blind peer caught up while fetching the target block')
+  t.is(push.length, 2, 'notification returns the replicated core length')
+  t.is(result.result.proof.upgrade.start, upgrade.start, 'upgrade start is preserved')
+  t.is(result.result.proof.upgrade.length, upgrade.length, 'requested upgrade split is preserved')
+})
+
 test('createNotification times out when the replication link is suspended', async function (t) {
   const { sender, blindPeer, senderLink } = await setupE2ENodes(t)
 

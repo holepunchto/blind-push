@@ -57,18 +57,19 @@ async function createNotification(
     extra = null
   } = {}
 ) {
+  // initial fetch to ensure core replication
+  const getOpts = { wait: true, timeout, decrypt: false, raw: true }
+  const block = await core.get(index, getOpts)
+
   // fall back to a full upgrade if the requested upgrade is unusable
   if (!isUsableUpgrade(upgrade, core.length)) upgrade = null
 
-  const getOpts = { wait: true, timeout, decrypt: false, raw: true }
-  const proms = [core.get(index, getOpts)]
+  const proms = []
   if (upgrade) {
     if (upgrade.start > 0) proms.push(core.get(upgrade.start - 1, getOpts))
     if (upgrade.length > 0) proms.push(core.get(upgrade.start + upgrade.length - 1, getOpts))
   }
-
-  const blocks = await Promise.all(proms)
-  const block = blocks[0]
+  await Promise.all(proms)
 
   let notification
   try {
