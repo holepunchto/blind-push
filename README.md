@@ -15,7 +15,7 @@ blind-peering
   -> BlindPeerRequest over blind-peer-muxer
 blind-peer
   -> createNotification(...)
-  -> { discoveryKey, payload }
+  -> { discoveryKey, payload, length }
   -> forward-push request
 push forwarder
   -> FCM
@@ -40,6 +40,7 @@ In the deployed flow, `core` is typically the blind-peer's replicated view of th
 - `roomKey`: optional room key used to encrypt the notification. Defaults to `core.key`.
 - `roomDiscoveryKey`: optional discovery key to expose in the returned payload. Defaults to `crypto.discoveryKey(roomKey)`.
 - `index`: optional block index to prove. Defaults to `core.length - 1`.
+- `upgrade`: optional proof split, supplied as `{ start: 0, length: previousLength }`, where `previousLength` is the receiver's expected core length. Defaults to `null`, which requests a full upgrade. An unusable split or one the blind peer cannot prove falls back to a full upgrade.
 - `timeout`: optional timeout passed to `core.get(...)`. Defaults to `10000`.
 - `extra`: optional metadata embedded in the encrypted proof payload.
 
@@ -47,6 +48,9 @@ Resolves to:
 
 - `notification.discoveryKey`: discovery key for the room.
 - `notification.payload`: encrypted proof bytes suitable for forwarding in a push payload.
+- `notification.length`: the blind peer's core length when the notification proof was generated. This is the expected length of the receiver's core after it receives and applies the notification.
+
+Save `notification.length` and use it as `upgrade: { start: 0, length: notification.length }` when creating the next notification. This lets the next proof be built for the receiver's expected previous core length.
 
 If the encrypted payload exceeds the internal size budget, the returned notification omits inline block data and carries a compact proof instead.
 The embedded `version` and `extra` fields live inside the encrypted proof payload and are exposed after decryption via `readNotification(...)`.
@@ -94,5 +98,6 @@ Returned by `createNotification(...)` when the compact proof still exceeds the i
 Exports the generated compact encodings used by the package:
 
 - `encodings.PushPayload`: `{ discoveryKey, payload }`, the encrypted push payload delivered to the receiver.
-- `encodings.BlindPeerRequest`: notification message encoding used by `blind-peering` and `blind-peer-muxer` with `{ block: { key, index }, destination: { key, discoveryKey }, appId?, extra? }`.
+- `encodings.BlindPeerRequest`: notification message encoding used by `blind-peering` and `blind-peer-muxer` with `{ block: { key, index, upgrade? }, destination: { key, discoveryKey }, appId?, extra? }`. `block.upgrade` carries the `{ start, length }` proof split described above.
+- `encodings.BlindPeerResponse`: `{ length }`, the notification response carrying the blind peer's core length for reuse in the next request. Empty responses from older blind peers decode to `{ length: 0 }`.
 - `encodings.ForwardPushRequest`: blind-peer -> push forwarder request encoding with `{ payload, appId? }`.

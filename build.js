@@ -93,6 +93,17 @@ blindPush.register({
 })
 
 blindPush.register({
+  name: 'blind-peer-response',
+  fields: [
+    {
+      name: 'length',
+      type: 'uint',
+      required: true
+    }
+  ]
+})
+
+blindPush.register({
   name: 'proof-payload',
   fields: [
     {

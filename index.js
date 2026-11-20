@@ -3,6 +3,7 @@ const sodium = require('sodium-native')
 const crypto = require('hypercore-crypto')
 const cenc = require('compact-encoding')
 const remote = require('hypercore/lib/fully-remote-proof')
+const flat = require('flat-tree')
 
 const schema = require('./spec/hyperschema')
 const BlindPushError = require('./lib/errors')
@@ -41,10 +42,9 @@ const VERSION = 3
  * @param {Uint8Array} [opts.roomDiscoveryKey=crypto.discoveryKey(roomKey)]
  * @param {number} [opts.index=core.length - 1]
  * @param {{ start: number, length: number } | null} [opts.upgrade=null]
- * @param {number} [opts.upgradeLength=0] deprecated, use opts.upgrade
  * @param {number} [opts.timeout=10000]
  * @param {Uint8Array | null} [opts.extra=null]
- * @returns {Promise<PushPayload>}
+ * @returns {Promise<PushPayload & { length: number }>}
  */
 async function createNotification(
   core,
@@ -53,50 +53,54 @@ async function createNotification(
     roomDiscoveryKey = crypto.discoveryKey(roomKey),
     index = core.length - 1,
     upgrade = null,
-    upgradeLength = 0,
     timeout = 10_000,
     extra = null
   } = {}
 ) {
-  const block = await core.get(index, {
-    wait: true,
-    timeout,
-    decrypt: false,
-    raw: true
-  })
-
-  // attempt to use old API if upgrade is null
-  if (upgrade === null && upgradeLength > 0) upgrade = { start: 0, length: upgradeLength }
+  const getOpts = { wait: true, timeout, decrypt: false, raw: true }
+  const block = await core.get(index, getOpts)
 
   // fall back to a full upgrade if the requested upgrade is unusable
   if (!isUsableUpgrade(upgrade, core.length)) upgrade = null
 
-  let payload
+  let notification
   try {
-    payload = await encryptNotificationProof(core, roomKey, block, index, { extra, upgrade })
+    const proms = []
+    if (upgrade) {
+      if (upgrade.start > 0) proms.push(core.get(upgrade.start - 1, getOpts))
+      if (upgrade.length > 0) proms.push(core.get(upgrade.start + upgrade.length - 1, getOpts))
+    }
+    await Promise.all(proms)
+
+    notification = await encryptNotificationProof(core, roomKey, block, index, { extra, upgrade })
   } catch (err) {
     // or if we don't hold the tree at that length, eg after catching up in one upgrade
     if (upgrade === null) throw err
     upgrade = null
-    payload = await encryptNotificationProof(core, roomKey, block, index, { extra, upgrade })
+    notification = await encryptNotificationProof(core, roomKey, block, index, { extra, upgrade })
   }
 
   // If payload exceeds MAX_PAYLOAD_SIZE, don't send it via Firebase
   // exclude the block and let the client fetch it via hypercore replication
-  if (payload.byteLength > MAX_PAYLOAD_BYTE_SIZE) {
-    payload = await encryptNotificationProof(core, roomKey, null, 0, { extra, upgrade })
+  if (notification.payload.byteLength > MAX_PAYLOAD_BYTE_SIZE) {
+    notification = await encryptNotificationProof(core, roomKey, null, 0, { extra, upgrade })
 
     // this may occur if the ‘extra’ field is too large
-    if (payload.byteLength > MAX_PAYLOAD_BYTE_SIZE) {
-      payload = await encryptNotificationProof(core, roomKey, null, 0, { upgrade })
+    if (notification.payload.byteLength > MAX_PAYLOAD_BYTE_SIZE) {
+      notification = await encryptNotificationProof(core, roomKey, null, 0, { upgrade })
 
-      if (payload.byteLength > MAX_PAYLOAD_BYTE_SIZE) {
+      if (notification.payload.byteLength > MAX_PAYLOAD_BYTE_SIZE) {
         throw BlindPushError.PAYLOAD_TOO_LARGE()
       }
     }
   }
 
-  return { discoveryKey: roomDiscoveryKey, payload, version: VERSION }
+  return {
+    discoveryKey: roomDiscoveryKey,
+    payload: notification.payload,
+    version: VERSION,
+    length: notification.length
+  }
 }
 
 /**
@@ -106,8 +110,8 @@ async function createNotification(
  */
 function isUsableUpgrade(upgrade, coreLength) {
   if (upgrade === null) return false
-  if (upgrade.start !== 0) return false
-  return upgrade.length > 0 && upgrade.length < coreLength
+  const end = upgrade.start + upgrade.length
+  return upgrade.start >= 0 && upgrade.length > 0 && end <= coreLength
 }
 
 /**
@@ -196,7 +200,7 @@ function decrypt(roomKey, encrypted) {
  * @param {object} [opts]
  * @param {Uint8Array | null} [opts.extra=null]
  * @param {{ start: number, length: number } | null} [opts.upgrade=null]
- * @returns {Promise<Uint8Array>}
+ * @returns {Promise<{ payload: Uint8Array, length: number }>}
  */
 async function encryptNotificationProof(
   core,
@@ -205,9 +209,34 @@ async function encryptNotificationProof(
   index,
   { extra, upgrade = null } = {}
 ) {
-  const proof = await remote.proof(core, { block, index, upgrade })
+  const result = await remote.proof(core, { block, index, upgrade, encode: false })
+  const proof = remote.encode(result)
   const rawProofPayload = cenc.encode(ProofPayload, { version: VERSION, extra, proof })
-  return encrypt(roomKey, rawProofPayload)
+  return { payload: encrypt(roomKey, rawProofPayload), length: proofLength(result.proof) }
+}
+
+/**
+ * Extracts the length a fully remote proof upgrades the receiver to, read from
+ * its nodes.
+ * @param {Uint8Array} proof fully remote proof, as returned by remote.proof
+ * @returns {number}
+ */
+function proofLength(proof) {
+  const { upgrade, block } = proof
+
+  let length = upgrade.start + upgrade.length
+
+  for (const node of upgrade.additionalNodes) {
+    length = Math.max(length, flat.rightSpan(node.index) / 2 + 1)
+  }
+
+  // the root holding the block comes from the block path, not additionalNodes
+  if (block) {
+    length = Math.max(length, block.index + 1)
+    for (const node of block.nodes) length = Math.max(length, flat.rightSpan(node.index) / 2 + 1)
+  }
+
+  return length
 }
 
 module.exports = {

@@ -40,6 +40,93 @@ test('createNotification/readNotification replication happy path', async functio
   t.alike(result.result.block.value, block, 'readNotification returns the appended block value')
 })
 
+test('returned push length can be used for the next notification', async function (t) {
+  const { sender, blindPeer, receiver, receiverLink } = await setupE2ENodes(t)
+
+  // an inital message is sent by sender
+  const block = b4a.from('hello world')
+  await sender.append(block)
+  await blindPeer.get(0, { wait: true, timeout: 500 })
+  await receiver.get(0, { wait: true, timeout: 500 })
+
+  // receiver disconnects
+  receiverLink.suspend()
+
+  // sender sends more messages
+  for (let i = 0; i < 4; i++) await sender.append(block)
+
+  // blind peer creates push notification for next 4 messages
+  const firstPush = await createNotification(blindPeer, {
+    index: 4,
+    upgrade: { start: 0, length: 1 }
+  })
+  const firstResult = await readNotification(
+    receiver.state.storage.store,
+    receiver.key,
+    firstPush.payload
+  )
+  t.ok(firstResult, 'first notification verifies on the receiver')
+  t.is(firstPush.length, 5, 'first notification returns the core length')
+  t.is(blindPeer.length, firstPush.length, 'first notification length matches blindPeer length')
+
+  const firstProof = firstResult.result.proof
+
+  // receiver can correctly apply proof
+  t.is(await receiver.has(4), false, 'receiver does not have the latest block')
+  t.ok(await receiver.core.verify(firstProof, null), 'first proof is applied')
+  t.ok(await receiver.has(4), 'new block arrived via the proof')
+
+  // sender sends more messages
+  for (let i = 0; i < 3; i++) await sender.append(block)
+
+  // blind peer creates push notification with prior push length
+  const secondPush = await createNotification(blindPeer, {
+    index: 7,
+    upgrade: { start: 0, length: firstPush.length }
+  })
+  const secondResult = await readNotification(
+    receiver.state.storage.store,
+    receiver.key,
+    secondPush.payload
+  )
+  const secondProof = secondResult.result.proof
+
+  // receiver can correctly apply proof
+  t.is(secondProof.upgrade.length, firstPush.length, 'upgrade is split at the returned length')
+  t.is(secondPush.length, 8, 'second notification returns the new core length')
+  t.is(await receiver.has(7), false, 'receiver does not have the new block')
+  t.ok(await receiver.core.verify(secondProof, null), 'second proof is applied')
+  t.ok(await receiver.has(7), 'new block arrived via the proof')
+  t.is(receiver.length, secondPush.length, 'receiver reaches the second notification length')
+})
+
+test('createNotification preserves the requested upgrade while the blind peer catches up', async function (t) {
+  const { sender, blindPeer, senderLink } = await setupE2ENodes(t)
+
+  await senderLink.suspend()
+  await sender.append(b4a.from('first'))
+  await sender.append(b4a.from('second'))
+
+  t.is(blindPeer.length, 0, 'blind peer has not replicated the core yet')
+
+  const upgrade = { start: 0, length: 1 }
+  const sentPromise = createNotification(blindPeer, {
+    index: 1,
+    upgrade,
+    timeout: 1000
+  })
+
+  await senderLink.resume()
+  const push = await sentPromise
+  const result = await readNotification(sender.state.storage.store, sender.key, push.payload)
+
+  t.ok(result, 'notification proof verifies')
+  t.is(blindPeer.length, 2, 'blind peer caught up while fetching the target block')
+  t.is(push.length, 2, 'notification returns the replicated core length')
+  t.is(result.result.proof.upgrade.start, upgrade.start, 'upgrade start is preserved')
+  t.is(result.result.proof.upgrade.length, upgrade.length, 'requested upgrade split is preserved')
+})
+
 test('createNotification times out when the replication link is suspended', async function (t) {
   const { sender, blindPeer, senderLink } = await setupE2ENodes(t)
 
@@ -93,6 +180,66 @@ test('createNotification resolves after sender replication resumes before timeou
     sender.discoveryKey,
     'createNotification returns the sender discovery key after resuming'
   )
+})
+
+test('createNotification fetches a missing upgrade start boundary after replication resumes', async function (t) {
+  const { sender, blindPeer, senderLink, receiverLink } = await setupE2ENodes(t)
+
+  await receiverLink.suspend()
+  await sender.append(new Array(10).fill(b4a.from('block')))
+  await blindPeer.get(9, { wait: true, timeout: 500 })
+  await blindPeer.get(7, { wait: true, timeout: 500 })
+  t.absent(await blindPeer.has(4), 'upgrade start boundary is missing')
+  await senderLink.suspend()
+
+  let status = 'pending'
+  const sentPromise = createNotification(blindPeer, {
+    index: 9,
+    upgrade: { start: 5, length: 3 },
+    timeout: 1000
+  }).then(
+    (push) => {
+      status = 'resolved'
+      return push
+    },
+    (err) => {
+      status = 'rejected'
+      throw err
+    }
+  )
+
+  await new Promise((resolve) => setTimeout(resolve, 100))
+  t.is(status, 'pending', 'notification waits for the missing start boundary')
+  t.absent(await blindPeer.has(4), 'start boundary is still missing while replication is suspended')
+
+  await senderLink.resume()
+  const push = await sentPromise
+
+  t.ok(await blindPeer.has(4), 'upgrade start boundary was downloaded')
+  t.is(push.length, 10, 'notification returns the core length')
+})
+
+test('createNotification falls back to a full upgrade when an upgrade boundary stays unavailable', async function (t) {
+  const { sender, blindPeer, senderLink, receiverLink } = await setupE2ENodes(t)
+
+  await receiverLink.suspend()
+  await sender.append(new Array(10).fill(b4a.from('block')))
+  await blindPeer.get(9, { wait: true, timeout: 500 })
+  await blindPeer.get(7, { wait: true, timeout: 500 })
+  t.absent(await blindPeer.has(4), 'upgrade start boundary is missing')
+  await senderLink.suspend()
+
+  const push = await createNotification(blindPeer, {
+    index: 9,
+    upgrade: { start: 5, length: 3 },
+    timeout: 500
+  })
+  const result = await readNotification(blindPeer.state.storage.store, blindPeer.key, push.payload)
+
+  t.ok(result, 'fallback proof verifies')
+  t.is(result.result.proof.upgrade.start, 0, 'fallback upgrade starts at zero')
+  t.is(result.result.proof.upgrade.length, blindPeer.length, 'fallback covers the full core')
+  t.absent(await blindPeer.has(4), 'upgrade start boundary remains missing')
 })
 
 test('readNotification reports newer data while receiver replication is suspended', async function (t) {
@@ -252,120 +399,5 @@ test('push notification from sender to receiver sad path', async function (t) {
     false,
     'push notification fails when prior notification was dropped'
   )
-  t.is(await receiver.has(proof.block.index), false, 'block could not be added by the proof')
-})
-
-test('createNotification falls back to a full upgrade when the requested length cannot be proven', async function (t) {
-  const { sender, blindPeer, receiver } = await setupE2ENodes(t)
-
-  await sender.append(new Array(8).fill(b4a.from('block')))
-  await blindPeer.get(7, { wait: true, timeout: 500 })
-
-  // one append, so the blind peer upgrades from 8 to 16 in one go
-  await sender.append(new Array(8).fill(b4a.from('block')))
-  await blindPeer.get(15, { wait: true, timeout: 500 })
-  t.absent(await blindPeer.has(8), 'blind peer skipped the blocks in between')
-
-  const push = await createNotification(blindPeer, { index: 15, upgrade: { start: 0, length: 9 } })
-  const result = await readNotification(receiver.state.storage.store, receiver.key, push.payload)
-  t.is(result.result.block.index, 15)
-  t.is(result.result.proof.upgrade.length, blindPeer.length, 'fell back to a full upgrade')
-})
-
-test('deprecated upgradeLength push notification from sender to receiver happy path', async function (t) {
-  const { sender, blindPeer, receiver, receiverLink } = await setupE2ENodes(t)
-
-  const block = b4a.from('hello world')
-  const addedBlocks = 5
-  for (let i = 0; i < addedBlocks; i++) await sender.append(block)
-
-  await blindPeer.get(addedBlocks - 1, { wait: true, timeout: 500 })
-  await receiver.get(addedBlocks - 1, { wait: true, timeout: 500 })
-
-  t.is(receiver.length, addedBlocks, 'receiver has replicated all sender blocks')
-
-  // the reciver goes offline
-  receiverLink.suspend()
-
-  // sender adds new blocks
-  const oldLen = receiver.length
-  const newBlocks = 3
-  for (let i = 0; i < newBlocks; i++) await sender.append(b4a.from('receiver is asleep'))
-
-  // the blind peer receives the new blocks
-  await blindPeer.get(oldLen + newBlocks - 1, { wait: true, timeout: 500 })
-  t.is(blindPeer.length, oldLen + newBlocks, 'new blocks added to blind peer')
-  t.is(receiver.length, oldLen, 'receiver does not have the new blocks')
-
-  // the blind peer creates a proof
-  const blockIdx = blindPeer.length - 1
-  const push = await createNotification(blindPeer, { index: blockIdx, upgradeLength: oldLen })
-
-  const result = await readNotification(receiver.state.storage.store, receiver.key, push.payload)
-  t.ok(result, 'readNotification verifies the push proof')
-
-  const proof = result.result.proof
-  t.comment(
-    `receiver length ${receiver.length}, blind peer length ${blindPeer.length}, ` +
-      `upgradeLength ${oldLen}, proof upgrade length ${proof.upgrade.length}, ` +
-      `additionalNodes ${proof.upgrade.additionalNodes.length}`
-  )
-  t.is(proof.upgrade.length, oldLen, 'upgrade is split at the deprecated upgradeLength')
-
-  // the proof is sent to the receiver and correctly applied
-  t.is(await receiver.has(blockIdx), false, 'block not there yet')
-  const applied = await receiver.core.verify(proof, null)
-  t.comment(`verify returned ${applied}, receiver length now ${receiver.length}`)
-  t.is(await receiver.has(blockIdx), true, 'block arrived via the proof')
-  t.is(receiver.length, blindPeer.length, 'receiver upgraded to the blind peer length')
-})
-
-test('deprecated upgradeLength push notification from sender to receiver sad path', async function (t) {
-  const { sender, blindPeer, receiver, receiverLink } = await setupE2ENodes(t)
-
-  const block = b4a.from('hello world')
-  const addedBlocks = 5
-  // set an incorrect receiver length
-  const incorrectLength = addedBlocks - 2
-
-  // make the blind peer stop at incorrectLength so it can prove it. If it skips it, the proof
-  // falls back to a full upgrade and this test flakes. That fallback is covered in its own test
-  for (let i = 0; i < incorrectLength; i++) await sender.append(block)
-  await blindPeer.get(incorrectLength - 1, { wait: true, timeout: 500 })
-  t.is(blindPeer.length, incorrectLength, 'blind peer upgraded to the incorrect length')
-  for (let i = incorrectLength; i < addedBlocks; i++) await sender.append(block)
-
-  // receiver and blind peer replicate all blocks
-  await blindPeer.get(addedBlocks - 1, { wait: true, timeout: 500 })
-  await receiver.get(addedBlocks - 1, { wait: true, timeout: 500 })
-
-  t.is(receiver.length, addedBlocks, 'receiver has replicated all sender blocks')
-
-  // receiver goes offline
-  receiverLink.suspend()
-
-  // sender adds new blocks and the peer receives them
-  for (let i = 0; i < addedBlocks; i++) await sender.append(block)
-  await blindPeer.get(addedBlocks * 2 - 1, { wait: true, timeout: 500 })
-
-  // the blind peer creates a push notification with the incorrect length
-  const push = await createNotification(blindPeer, { upgradeLength: incorrectLength })
-
-  // the proof is produced correctly
-  const result = await readNotification(receiver.state.storage.store, receiver.key, push.payload)
-  t.ok(result, 'readNotification verifies the push proof')
-
-  const proof = result.result.proof
-  t.comment(
-    `receiver length ${receiver.length}, blind peer length ${blindPeer.length}, ` +
-      `upgradeLength ${incorrectLength}, proof upgrade length ${proof.upgrade.length}, ` +
-      `additionalNodes ${proof.upgrade.additionalNodes.length}`
-  )
-  t.is(proof.upgrade.length, incorrectLength, 'upgrade is split at the deprecated upgradeLength')
-
-  // but the receiver cannot apply it
-  t.is(await receiver.has(proof.block.index), false, 'block not there yet')
-  const applied = await receiver.core.verify(proof, null)
-  t.is(applied, false, 'push notification fails when upgradeLength does not match the receiver')
   t.is(await receiver.has(proof.block.index), false, 'block could not be added by the proof')
 })
