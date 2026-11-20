@@ -57,7 +57,6 @@ async function createNotification(
     extra = null
   } = {}
 ) {
-  // initial fetch to ensure core replication
   const getOpts = { wait: true, timeout, decrypt: false, raw: true }
   const block = await core.get(index, getOpts)
 
@@ -96,7 +95,6 @@ async function createNotification(
     }
   }
 
-  // the length the sent proof upgrades the receiver to, taken from that same proof
   return {
     discoveryKey: roomDiscoveryKey,
     payload: notification.payload,
