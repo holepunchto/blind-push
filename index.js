@@ -63,15 +63,15 @@ async function createNotification(
   // fall back to a full upgrade if the requested upgrade is unusable
   if (!isUsableUpgrade(upgrade, core.length)) upgrade = null
 
-  const proms = []
-  if (upgrade) {
-    if (upgrade.start > 0) proms.push(core.get(upgrade.start - 1, getOpts))
-    if (upgrade.length > 0) proms.push(core.get(upgrade.start + upgrade.length - 1, getOpts))
-  }
-  await Promise.all(proms)
-
   let notification
   try {
+    const proms = []
+    if (upgrade) {
+      if (upgrade.start > 0) proms.push(core.get(upgrade.start - 1, getOpts))
+      if (upgrade.length > 0) proms.push(core.get(upgrade.start + upgrade.length - 1, getOpts))
+    }
+    await Promise.all(proms)
+
     notification = await encryptNotificationProof(core, roomKey, block, index, { extra, upgrade })
   } catch (err) {
     // or if we don't hold the tree at that length, eg after catching up in one upgrade
