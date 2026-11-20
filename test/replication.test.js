@@ -54,10 +54,12 @@ test('returned push length can be used for the next notification', async functio
 
   // sender sends more messages
   for (let i = 0; i < 4; i++) await sender.append(block)
-  await blindPeer.get(4, { wait: true, timeout: 500 })
 
   // blind peer creates push notification for next 4 messages
-  const firstPush = await createNotification(blindPeer, { upgrade: { start: 0, length: 1 } })
+  const firstPush = await createNotification(blindPeer, {
+    index: 4,
+    upgrade: { start: 0, length: 1 }
+  })
   const firstResult = await readNotification(
     receiver.state.storage.store,
     receiver.key,
@@ -76,10 +78,10 @@ test('returned push length can be used for the next notification', async functio
 
   // sender sends more messages
   for (let i = 0; i < 3; i++) await sender.append(block)
-  await blindPeer.get(7, { wait: true, timeout: 500 })
 
   // blind peer creates push notification with prior push length
   const secondPush = await createNotification(blindPeer, {
+    index: 7,
     upgrade: { start: 0, length: firstPush.length }
   })
   const secondResult = await readNotification(
@@ -217,7 +219,7 @@ test('createNotification fetches a missing upgrade start boundary after replicat
   t.is(push.length, 10, 'notification returns the core length')
 })
 
-test('createNotification times out when an upgrade boundary stays unavailable', async function (t) {
+test('createNotification falls back to a full upgrade when an upgrade boundary stays unavailable', async function (t) {
   const { sender, blindPeer, senderLink, receiverLink } = await setupE2ENodes(t)
 
   await receiverLink.suspend()
@@ -227,15 +229,16 @@ test('createNotification times out when an upgrade boundary stays unavailable', 
   t.absent(await blindPeer.has(4), 'upgrade start boundary is missing')
   await senderLink.suspend()
 
-  await t.exception(
-    createNotification(blindPeer, {
-      index: 9,
-      upgrade: { start: 5, length: 3 },
-      timeout: 500
-    }),
-    /REQUEST_TIMEOUT/,
-    'notification times out while the target and end boundary blocks are available'
-  )
+  const push = await createNotification(blindPeer, {
+    index: 9,
+    upgrade: { start: 5, length: 3 },
+    timeout: 500
+  })
+  const result = await readNotification(blindPeer.state.storage.store, blindPeer.key, push.payload)
+
+  t.ok(result, 'fallback proof verifies')
+  t.is(result.result.proof.upgrade.start, 0, 'fallback upgrade starts at zero')
+  t.is(result.result.proof.upgrade.length, blindPeer.length, 'fallback covers the full core')
   t.absent(await blindPeer.has(4), 'upgrade start boundary remains missing')
 })
 
